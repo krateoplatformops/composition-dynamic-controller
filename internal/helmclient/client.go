@@ -9,7 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
-
+registryauth "oras.land/oras-go/pkg/registry/remote/auth"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/spf13/pflag"
@@ -35,6 +35,7 @@ var storage = repo.File{}
 const (
 	defaultCachePath            = "/tmp/.helmcache"
 	defaultRepositoryConfigPath = "/tmp/.helmrepo"
+	defaultConfigPath           = "/tmp/.helmconfig"
 )
 
 // New returns a new Helm client with the provided options
@@ -104,14 +105,24 @@ func newClient(options *Options, clientGetter genericclioptions.RESTClientGetter
 		return nil, err
 	}
 
+	f, err := os.OpenFile(defaultConfigPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, err
+	}
+
 	registryClient, err := registry.NewClient(
 		registry.ClientOptDebug(settings.Debug),
 		registry.ClientOptCredentialsFile(settings.RegistryConfig),
+		registry.ClientOptEnableCache(true),
+		registry.re
 	)
+	registryClien
+
 	if err != nil {
 		return nil, err
 	}
 	actionConfig.RegistryClient = registryClient
+	actionConfig.au
 
 	return &HelmClient{
 		Settings:     settings,
@@ -121,6 +132,7 @@ func newClient(options *Options, clientGetter genericclioptions.RESTClientGetter
 		linting:      options.Linting,
 		DebugLog:     debugLog,
 		output:       options.Output,
+		RegistryAuth: options.RegistryAuth,
 	}, nil
 }
 
@@ -752,11 +764,35 @@ func (c *HelmClient) upgradeCRDV1(ctx context.Context, cl *clientset.Clientset, 
 	return nil
 }
 
+func isOci(chartName string) bool {
+	return strings.HasPrefix(chartName, "oci://")
+}
+
+func (c *HelmClient) buildLoginOpts() []registry.LoginOption {
+	if c.RegistryAuth != nil {
+		return []registry.LoginOption{
+			registry.LoginOptBasicAuth(c.RegistryAuth.Username, c.RegistryAuth.Password),
+			registry.LoginOptInsecure(c.RegistryAuth.InsecureSkipTLSverify),
+		}
+	}
+	return nil
+}
+
 // GetChart returns a chart matching the provided chart name and options.
 func (c *HelmClient) GetChart(chartName string, chartPathOptions *action.ChartPathOptions) (*chart.Chart, string, error) {
+	loginOpts := c.buildLoginOpts()
+	if isOci(chartName) && len(loginOpts) > 0 {
+		ref := strings.TrimPrefix(chartName, "oci://")
+		host := strings.Split(ref, "/")[0]
+		err := c.ActionConfig.RegistryClient.Login(host, loginOpts...)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to login to registry %q: %w", host, err)
+		}
+		defer c.ActionConfig.RegistryClient.Logout(host)
+	}
 	chartPath, err := chartPathOptions.LocateChart(chartName, c.Settings)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("failed to locate chart %q: %w", chartName, err)
 	}
 
 	helmChart, err := loader.Load(chartPath)
@@ -769,6 +805,7 @@ func (c *HelmClient) GetChart(chartName string, chartPathOptions *action.ChartPa
 	}
 
 	return helmChart, chartPath, err
+
 }
 
 // chartExists checks whether a chart is already installed
