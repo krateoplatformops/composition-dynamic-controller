@@ -9,7 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
-registryauth "oras.land/oras-go/pkg/registry/remote/auth"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/spf13/pflag"
@@ -105,24 +105,15 @@ func newClient(options *Options, clientGetter genericclioptions.RESTClientGetter
 		return nil, err
 	}
 
-	f, err := os.OpenFile(defaultConfigPath, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		return nil, err
-	}
-
 	registryClient, err := registry.NewClient(
 		registry.ClientOptDebug(settings.Debug),
 		registry.ClientOptCredentialsFile(settings.RegistryConfig),
-		registry.ClientOptEnableCache(true),
-		registry.re
 	)
-	registryClien
 
 	if err != nil {
 		return nil, err
 	}
 	actionConfig.RegistryClient = registryClient
-	actionConfig.au
 
 	return &HelmClient{
 		Settings:     settings,
