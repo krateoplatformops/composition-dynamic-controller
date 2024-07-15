@@ -91,6 +91,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref ObjectRef) error {
 			})
 			return nil
 		}
+
 		return err
 	}
 
@@ -174,15 +175,7 @@ func (c *Controller) handleDeleteEvent(ctx context.Context, ref ObjectRef) error
 		return nil
 	}
 
-	el, err := c.fetch(ctx, ref, true)
-	if err != nil {
-		c.logger.Err(err).
-			Str("objectRef", ref.String()).
-			Msg("Resolving unstructured object.")
-		return err
-	}
-
-	return c.externalClient.Delete(ctx, el)
+	return c.externalClient.Delete(ctx, ref)
 }
 
 func (c *Controller) fetch(ctx context.Context, ref ObjectRef, clean bool) (*unstructured.Unstructured, error) {

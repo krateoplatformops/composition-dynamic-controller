@@ -9,15 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/client"
-	helmComposition "github.com/krateoplatformops/composition-dynamic-controller/internal/composition/helmComposition"
-	restComposition "github.com/krateoplatformops/composition-dynamic-controller/internal/composition/restComposition"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/eventrecorder"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/shortid"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/support"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
-	getter "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/restclient"
 	"github.com/rs/zerolog"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -41,7 +38,7 @@ func main() {
 		support.EnvBool("COMPOSITION_CONTROLLER_DEBUG", false), "dump verbose output")
 	workers := flag.Int("workers", support.EnvInt("COMPOSITION_CONTROLLER_WORKERS", 1), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		support.EnvDuration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*1), "resync interval")
+		support.EnvDuration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
 	resourceGroup := flag.String("group",
 		support.EnvString("COMPOSITION_CONTROLLER_GROUP", ""), "resource api group")
 	resourceVersion := flag.String("version",
@@ -52,8 +49,6 @@ func main() {
 		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
 	chart := flag.String("chart",
 		support.EnvString("COMPOSITION_CONTROLLER_CHART", ""), "chart")
-	cliType := flag.String("client",
-		support.EnvString("COMPOSITION_CLIENT_TYPE", string(client.ClientHelm)), "client type [REST|HELM]]")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -61,11 +56,7 @@ func main() {
 	}
 
 	flag.Parse()
-	clientType, err := client.ToClientType(*cliType)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+
 	// Initialize the logger
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
@@ -77,8 +68,6 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	zerolog.TimeFieldFormat = time.RFC3339
 
-	zerolog.TimeFieldFormat = time.RFC3339
-	// outLogger := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339, NoColor: true, }
 	log := zerolog.New(os.Stdout).With().
 		Str("service", serviceName).
 		Timestamp().
@@ -86,6 +75,7 @@ func main() {
 
 	// Kubernetes configuration
 	var cfg *rest.Config
+	var err error
 	if len(*kubeconfig) > 0 {
 		cfg, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	} else {
@@ -105,27 +95,17 @@ func main() {
 		log.Fatal().Err(err).Msg("Creating event recorder.")
 	}
 
-	var handler controller.ExternalClient
-	switch clientType {
-	case client.ClientREST:
-		var swg getter.Getter
-		swg, err = getter.Dynamic(cfg)
+	var pig archive.Getter
+	if len(*chart) > 0 {
+		pig = archive.Static(*chart)
+	} else {
+		pig, err = archive.Dynamic(cfg, *debug)
 		if err != nil {
 			log.Fatal().Err(err).Msg("Creating chart url info getter.")
 		}
-		handler = restComposition.NewHandler(cfg, &log, swg)
-	case client.ClientHelm:
-		var pig archive.Getter
-		if len(*chart) > 0 {
-			pig = archive.Static(*chart)
-		} else {
-			pig, err = archive.Dynamic(cfg, *debug)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Creating chart url info getter.")
-			}
-		}
-		handler = helmComposition.NewHandler(cfg, &log, pig)
 	}
+
+	handler := composition.NewHandler(cfg, &log, pig)
 
 	log.Info().
 		Str("build", Build).
@@ -134,7 +114,6 @@ func main() {
 		Str("group", *resourceGroup).
 		Str("version", *resourceVersion).
 		Str("resource", *resourceName).
-		Str("clientType", clientType.String()).
 		Msgf("Starting %s.", serviceName)
 
 	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
@@ -149,12 +128,11 @@ func main() {
 			Version:  *resourceVersion,
 			Resource: *resourceName,
 		},
-		Namespace:      *namespace,
-		Recorder:       rec,
-		Logger:         &log,
-		ExternalClient: handler,
+		Namespace: *namespace,
+		Recorder:  rec,
+		Logger:    &log,
 	})
-	// ctrl.SetExternalClient(handler)
+	ctrl.SetExternalClient(handler)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), []os.Signal{
 		os.Interrupt,
