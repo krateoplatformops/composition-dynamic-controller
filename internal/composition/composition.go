@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
@@ -18,8 +19,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/client/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
+
 	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
 )
@@ -322,31 +323,24 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	return nil
 }
-func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
-	log := h.logger.With().
-		Str("op", "Delete").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
 
-	// mg := unstructured.Unstructured{}
-	// mg.SetAPIVersion(ref.APIVersion)
-	// mg.SetKind(ref.Kind)
-	// mg.SetName(ref.Name)
-	// mg.SetNamespace(ref.Namespace)
-
+func (h *handler) Delete(ctx context.Context, ref controller.ObjectRef) error {
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
 
-	pkg, err := h.packageInfoGetter.Get(mg)
+	mg := unstructured.Unstructured{}
+	mg.SetAPIVersion(ref.APIVersion)
+	mg.SetKind(ref.Kind)
+	mg.SetName(ref.Name)
+	mg.SetNamespace(ref.Namespace)
+
+	hc, err := h.helmClientForResource(&mg, nil)
 	if err != nil {
-		log.Err(err).Msg("Getting package info")
 		return err
 	}
 
-	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
+	pkg, err := h.packageInfoGetter.Get(&mg)
 	if err != nil {
 		return err
 	}
@@ -374,51 +368,6 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	return nil
 }
-
-// func (h *handler) Delete(ctx context.Context, ref controller.ObjectRef) error {
-// 	if h.packageInfoGetter == nil {
-// 		return fmt.Errorf("helm chart package info getter must be specified")
-// 	}
-
-// 	mg := unstructured.Unstructured{}
-// 	mg.SetAPIVersion(ref.APIVersion)
-// 	mg.SetKind(ref.Kind)
-// 	mg.SetName(ref.Name)
-// 	mg.SetNamespace(ref.Namespace)
-
-// 	hc, err := h.helmClientForResource(&mg, nil)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	pkg, err := h.packageInfoGetter.Get(&mg)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	chartSpec := helmclient.ChartSpec{
-// 		ReleaseName: mg.GetName(),
-// 		Namespace:   mg.GetNamespace(),
-// 		ChartName:   pkg.URL,
-// 		Version:     pkg.Version,
-// 		Wait:        true,
-// 		Timeout:     time.Minute * 3,
-// 	}
-
-// 	err = hc.UninstallRelease(&chartSpec)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	h.logger.Debug().Str("apiVersion", mg.GetAPIVersion()).
-// 		Str("kind", mg.GetKind()).
-// 		Str("name", mg.GetName()).
-// 		Str("namespace", mg.GetNamespace()).
-// 		Str("package", pkg.URL).
-// 		Msg("Composition package removed.")
-
-// 	return nil
-// }
 
 func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryAuth *helmclient.RegistryAuth) (helmclient.Client, error) {
 	log := h.logger.With().
