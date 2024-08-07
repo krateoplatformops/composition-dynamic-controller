@@ -3,6 +3,7 @@ package helmchart
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
@@ -38,6 +39,38 @@ func ExtractValuesFromSpec(un *unstructured.Unstructured) ([]byte, error) {
 	}
 
 	return sigsyaml.Marshal(spec)
+}
+
+func AddOrUpdateFieldInValues(values []byte, value interface{}, fields ...string) ([]byte, error) {
+	var valuesMap map[string]interface{}
+	if err := sigsyaml.Unmarshal(values, &valuesMap); err != nil {
+		return nil, err
+	}
+
+	// Recursive function to add the value to the map creating nested maps if needed
+	var addOrUpdateField func(map[string]interface{}, []string, interface{}) error
+	addOrUpdateField = func(m map[string]interface{}, fields []string, value interface{}) error {
+		if len(fields) == 1 {
+			m[fields[0]] = value
+			return nil
+		}
+
+		if _, ok := m[fields[0]]; !ok {
+			m[fields[0]] = map[string]interface{}{}
+		}
+
+		if nestedMap, ok := m[fields[0]].(map[string]interface{}); ok {
+			return addOrUpdateField(nestedMap, fields[1:], value)
+		} else {
+			return fmt.Errorf("field %s is not a map", fields[0])
+		}
+	}
+
+	if err := addOrUpdateField(valuesMap, fields, value); err != nil {
+		return nil, err
+	}
+
+	return sigsyaml.Marshal(valuesMap)
 }
 
 type RenderTemplateOptions struct {
