@@ -2,6 +2,7 @@ package helmchart
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"helm.sh/helm/v3/pkg/release"
@@ -45,8 +46,13 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	if len(dat) == 0 {
 		return nil, 0, nil
 	}
-
 	uid := opts.Resource.GetUID()
+
+	dat, err = AddOrUpdateFieldInValues(dat, uid, "global", "compositionId")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add compositionId to values: %w", err)
+	}
+
 	claimGen := opts.Resource.GetGeneration()
 	chartSpec.ValuesYaml = string(dat)
 
