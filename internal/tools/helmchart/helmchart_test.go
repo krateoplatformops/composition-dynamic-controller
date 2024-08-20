@@ -42,9 +42,10 @@ func TestRenderTemplate(t *testing.T) {
 	}
 
 	opts := RenderTemplateOptions{
-		PackageUrl: "oci://registry-1.docker.io/bitnamicharts/postgresql",
-		HelmClient: cli,
-		Resource:   res,
+		PackageUrl:     "oci://registry-1.docker.io/bitnamicharts/postgresql",
+		PackageVersion: "12.8.3",
+		HelmClient:     cli,
+		Resource:       res,
 	}
 
 	all, err := RenderTemplate(context.TODO(), opts)
