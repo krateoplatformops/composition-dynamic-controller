@@ -11,7 +11,7 @@ The composition-dynamic-controller is an operator that is instantiated by the [c
 
 ## Overview
 
-The composition-dynamic-controller is an operator designed to manage the lifecycle of a Helm chart based on specifications defined within its Custom Resource (CR) and the actions performed on this CR.
+The composition-dynamic-controller is an operator designed to manage the lifecycle of a Helm chart based on specifications defined within its Custom Resource (CR) and the actions performed on [this CR](https://github.com/krateoplatformops/core-provider/blob/1233e2a80ebaa4ef7816596b27f64d820e9b2f26/testdata/compositiondefinition-postgresql-oci.yaml).
 
 In practice, when a Custom Resource (CR) is created, the instance of composition-dynamic-controller enabled to manage this specific Group Version Kind (GVK), checks if a Helm release associated with the CR already exists in the cluster. If not, it performs an `helm install` using the values specified in the CR to create a new release. However, if the release does already exist, it instead executes an `helm upgrade`, updating the release's values with those specified in the CR. Additionally, when the CR is deleted from the cluster, the instance of the composition-dynamic-controller performs an `helm uninstall` on the release.
 
