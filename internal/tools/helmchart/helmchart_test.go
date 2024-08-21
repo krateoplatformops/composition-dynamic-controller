@@ -12,6 +12,7 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"helm.sh/helm/v3/pkg/action"
@@ -137,7 +138,7 @@ func newHelmClient() helmclient.Client {
 		// storage:      &storage,
 		ActionConfig: actionConfig,
 		// linting:      options.Linting,
-		DebugLog: nil,
+		DebugLog: actionConfig.Log,
 		// output:       options.Output,
 		// RegistryAuth: options.RegistryAuth,
 	}
@@ -162,5 +163,21 @@ func actionConfigFixture() *action.Configuration {
 			// 	t.Logf(format, v...)
 			// }
 		},
+	}
+}
+func TestFindRelease(t *testing.T) {
+	hc := newHelmClient()
+
+	releaseName := "my-release"
+
+	// Call the FindRelease function
+	actualRelease, err := FindRelease(hc, releaseName)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check if the actual release matches the expected release
+	if actualRelease != nil {
+		t.Fatalf("expected release %v, got %v", nil, actualRelease)
 	}
 }
