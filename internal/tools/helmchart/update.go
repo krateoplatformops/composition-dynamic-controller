@@ -20,6 +20,7 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 	chartSpec := helmclient.ChartSpec{
 		ReleaseName:     opts.Resource.GetName(),
 		Namespace:       opts.Resource.GetNamespace(),
+		Repo:            opts.Repo,
 		ChartName:       opts.ChartName,
 		Version:         opts.Version,
 		CreateNamespace: true,
