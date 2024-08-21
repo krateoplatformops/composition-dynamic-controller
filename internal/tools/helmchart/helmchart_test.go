@@ -3,12 +3,23 @@ package helmchart
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
+
+	"helm.sh/helm/v3/pkg/cli"
+
+	helmstorage "helm.sh/helm/v3/pkg/storage"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/getter"
+	kubefake "helm.sh/helm/v3/pkg/kube/fake"
+	"helm.sh/helm/v3/pkg/registry"
+	"helm.sh/helm/v3/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -36,10 +47,11 @@ func ExampleExtractValuesFromSpec() {
 func TestRenderTemplate(t *testing.T) {
 	res := createDummyResource()
 
-	cli, err := connect(&zerolog.Logger{}, res)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// cli, err := connect(&zerolog.Logger{}, res)
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	cli := newHelmClient()
 
 	opts := RenderTemplateOptions{
 		PackageUrl:     "oci://registry-1.docker.io/bitnamicharts/postgresql",
@@ -101,4 +113,54 @@ func connect(logger *zerolog.Logger, cr *unstructured.Unstructured) (helmclient.
 	}
 
 	return helmclient.New(opts)
+}
+
+func newHelmClient() helmclient.Client {
+	settings := cli.New()
+	// storage := repo.File{}
+
+	actionConfig := actionConfigFixture()
+
+	registryClient, err := registry.NewClient(
+		registry.ClientOptDebug(settings.Debug),
+		registry.ClientOptCredentialsFile(settings.RegistryConfig),
+	)
+	if err != nil {
+		// t.Fatal(err)
+		return nil
+	}
+	actionConfig.RegistryClient = registryClient
+
+	return &helmclient.HelmClient{
+		Settings:  settings,
+		Providers: getter.All(settings),
+		// storage:      &storage,
+		ActionConfig: actionConfig,
+		// linting:      options.Linting,
+		DebugLog: nil,
+		// output:       options.Output,
+		// RegistryAuth: options.RegistryAuth,
+	}
+}
+
+func actionConfigFixture() *action.Configuration {
+	// t.Helper()
+
+	registryClient, err := registry.NewClient()
+	if err != nil {
+		// t.Fatal(err)
+	}
+
+	return &action.Configuration{
+		Releases:       helmstorage.Init(driver.NewMemory()),
+		KubeClient:     &kubefake.FailingKubeClient{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}},
+		Capabilities:   chartutil.DefaultCapabilities,
+		RegistryClient: registryClient,
+		Log: func(format string, v ...interface{}) {
+			// t.Helper()
+			// if true {
+			// 	t.Logf(format, v...)
+			// }
+		},
+	}
 }
