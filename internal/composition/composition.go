@@ -93,6 +93,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return false, nil
 	}
 
+	// Check if the package version in the CompositionDefinition is the same as the installed chart version.
+	if pkg.Version != rel.Chart.Metadata.Version {
+		log.Debug().Msg("Composition package version mismatch.")
+		return false, nil
+	}
+
 	renderOpts := helmchart.RenderTemplateOptions{
 		HelmClient:     hc,
 		Resource:       mg,
