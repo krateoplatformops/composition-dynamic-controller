@@ -110,16 +110,16 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 
 	got := []*unstructured.Unstructured{}
 	for _, el := range all.Items {
-		apiVersion, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "apiVersion")
+		group, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "managed", "group")
 		if err != nil {
-			log.Printf("[ERR] resolving 'status.apiVersion': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
+			log.Printf("[ERR] resolving 'status.group': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
 			continue
 		}
 		if !ok {
 			continue
 		}
 
-		kind, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "kind")
+		kind, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "managed", "kind")
 		if err != nil {
 			log.Printf("[ERR] resolving 'status.kind': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
 			continue
@@ -128,7 +128,8 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			continue
 		}
 
-		if apiVersion == uns.GetAPIVersion() && kind == uns.GetKind() {
+		compositionGroup := strings.Split(uns.GetAPIVersion(), "/")[0]
+		if group == compositionGroup && kind == uns.GetKind() {
 			got = append(got, el.DeepCopy())
 		}
 	}
