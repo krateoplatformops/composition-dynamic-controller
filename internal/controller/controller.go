@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/google/go-cmp/cmp"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/listwatcher"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/shortid"
+	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,6 +24,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+)
+
+const (
+	reasonReconciliationPaused string = "ReconciliationPaused"
 )
 
 type Options struct {
@@ -50,12 +60,17 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 
 	queue := workqueue.NewRateLimitingQueue(rateLimiter)
 
+	lw, err := listwatcher.Create(listwatcher.CreateOptions{
+		Client:    opts.Client,
+		GVR:       opts.GVR,
+		Namespace: opts.Namespace,
+	})
+	if err != nil {
+		opts.Logger.Error().Err(err).Msg("Failed to create listwatcher.")
+		return nil
+	}
 	indexer, informer := cache.NewIndexerInformer(
-		listwatcher.Create(listwatcher.CreateOptions{
-			Client:    opts.Client,
-			GVR:       opts.GVR,
-			Namespace: opts.Namespace,
-		}),
+		lw,
 		&unstructured.Unstructured{},
 		opts.ResyncInterval,
 		cache.ResourceEventHandlerFuncs{
@@ -75,7 +90,7 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 				queue.Add(event{
 					id:        id,
 					eventType: Observe,
-					objectRef: ObjectRef{
+					objectRef: objectref.ObjectRef{
 						APIVersion: el.GetAPIVersion(),
 						Kind:       el.GetKind(),
 						Name:       el.GetName(),
@@ -119,7 +134,7 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 					queue.Add(event{
 						id:        id,
 						eventType: Update,
-						objectRef: ObjectRef{
+						objectRef: objectref.ObjectRef{
 							APIVersion: newUns.GetAPIVersion(),
 							Kind:       newUns.GetKind(),
 							Name:       newUns.GetName(),
@@ -130,7 +145,7 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 					queue.AddAfter(event{
 						id:        id,
 						eventType: Observe,
-						objectRef: ObjectRef{
+						objectRef: objectref.ObjectRef{
 							APIVersion: newUns.GetAPIVersion(),
 							Kind:       newUns.GetKind(),
 							Name:       newUns.GetName(),
@@ -146,6 +161,15 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 					return
 				}
 
+				if meta.IsPaused(el) {
+					opts.Logger.Debug().Msgf("Reconciliation is paused via the pause annotation %s: %s; %s: %s", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
+					opts.Recorder.Event(el, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
+					unstructuredtools.SetCondition(el, condition.ReconcilePaused())
+					// if the pause annotation is removed, we will have a chance to reconcile again and resume
+					// and if status update fails, we will reconcile again to retry to update the status
+					return
+				}
+
 				id, err := sid.Generate()
 				if err != nil {
 					opts.Logger.Error().Err(err).Msg("DeleteFunc: generating short id.")
@@ -155,7 +179,7 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 				queue.Add(event{
 					id:        id,
 					eventType: Delete,
-					objectRef: ObjectRef{
+					objectRef: objectref.ObjectRef{
 						APIVersion: el.GetAPIVersion(),
 						Kind:       el.GetKind(),
 						Name:       el.GetName(),

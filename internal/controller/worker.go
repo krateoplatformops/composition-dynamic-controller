@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -66,7 +70,7 @@ func (c *Controller) processItem(ctx context.Context, obj interface{}) error {
 	}
 }
 
-func (c *Controller) handleObserve(ctx context.Context, ref ObjectRef) error {
+func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef) error {
 	if c.externalClient == nil {
 		c.logger.Warn().
 			Str("eventType", string(Observe)).
@@ -80,6 +84,25 @@ func (c *Controller) handleObserve(ctx context.Context, ref ObjectRef) error {
 			Str("objectRef", ref.String()).
 			Msg("Resolving unstructured object.")
 		return err
+	}
+
+	if meta.IsPaused(el) {
+		c.logger.Debug().Msgf("Reconciliation is paused via the pause annotation %s: %s; %s: %s", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
+		// opts.Recorder.Event(newUns, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
+		err = unstructuredtools.SetCondition(el, condition.ReconcilePaused())
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")
+			return err
+		}
+
+		_, err := c.dynamicClient.Resource(c.gvr).Namespace(el.GetNamespace()).UpdateStatus(context.Background(), el, metav1.UpdateOptions{})
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: updating status.")
+			return err
+		}
+		// if the pause annotation is removed, we will have a chance to reconcile again and resume
+		// and if status update fails, we will reconcile again to retry to update the status
+		return nil
 	}
 
 	exists, err := c.externalClient.Observe(ctx, el)
@@ -127,7 +150,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref ObjectRef) error {
 	return nil
 }
 
-func (c *Controller) handleCreate(ctx context.Context, ref ObjectRef) error {
+func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) error {
 	if c.externalClient == nil {
 		c.logger.Warn().
 			Str("eventType", string(Create)).
@@ -145,10 +168,29 @@ func (c *Controller) handleCreate(ctx context.Context, ref ObjectRef) error {
 		return err
 	}
 
+	if meta.IsPaused(el) {
+		c.logger.Debug().Msgf("Reconciliation is paused via the pause annotation %s: %s; %s: %s", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
+		// opts.Recorder.Event(newUns, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
+		err = unstructuredtools.SetCondition(el, condition.ReconcilePaused())
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")
+			return err
+		}
+
+		_, err := c.dynamicClient.Resource(c.gvr).Namespace(el.GetNamespace()).UpdateStatus(context.Background(), el, metav1.UpdateOptions{})
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: updating status.")
+			return err
+		}
+		// if the pause annotation is removed, we will have a chance to reconcile again and resume
+		// and if status update fails, we will reconcile again to retry to update the status
+		return nil
+	}
+
 	return c.externalClient.Create(ctx, el)
 }
 
-func (c *Controller) handleUpdateEvent(ctx context.Context, ref ObjectRef) error {
+func (c *Controller) handleUpdateEvent(ctx context.Context, ref objectref.ObjectRef) error {
 	if c.externalClient == nil {
 		c.logger.Warn().
 			Str("eventType", string(Update)).
@@ -164,10 +206,29 @@ func (c *Controller) handleUpdateEvent(ctx context.Context, ref ObjectRef) error
 		return err
 	}
 
+	if meta.IsPaused(el) {
+		c.logger.Debug().Msgf("Reconciliation is paused via the pause annotation %s: %s; %s: %s", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
+		// opts.Recorder.Event(newUns, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
+		err = unstructuredtools.SetCondition(el, condition.ReconcilePaused())
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")
+			return err
+		}
+
+		_, err := c.dynamicClient.Resource(c.gvr).Namespace(el.GetNamespace()).UpdateStatus(context.Background(), el, metav1.UpdateOptions{})
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: updating status.")
+			return err
+		}
+		// if the pause annotation is removed, we will have a chance to reconcile again and resume
+		// and if status update fails, we will reconcile again to retry to update the status
+		return nil
+	}
+
 	return c.externalClient.Update(ctx, el)
 }
 
-func (c *Controller) handleDeleteEvent(ctx context.Context, ref ObjectRef) error {
+func (c *Controller) handleDeleteEvent(ctx context.Context, ref objectref.ObjectRef) error {
 	if c.externalClient == nil {
 		c.logger.Warn().
 			Str("eventType", string(Delete)).
@@ -178,7 +239,7 @@ func (c *Controller) handleDeleteEvent(ctx context.Context, ref ObjectRef) error
 	return c.externalClient.Delete(ctx, ref)
 }
 
-func (c *Controller) fetch(ctx context.Context, ref ObjectRef, clean bool) (*unstructured.Unstructured, error) {
+func (c *Controller) fetch(ctx context.Context, ref objectref.ObjectRef, clean bool) (*unstructured.Unstructured, error) {
 	res, err := c.dynamicClient.Resource(c.gvr).
 		Namespace(ref.Namespace).
 		Get(ctx, ref.Name, metav1.GetOptions{})

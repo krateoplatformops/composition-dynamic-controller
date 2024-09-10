@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 
@@ -82,14 +83,14 @@ type RenderTemplateOptions struct {
 	Credentials    *Credentials
 }
 
-func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]controller.ObjectRef, error) {
+func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectref.ObjectRef, error) {
 	dat, err := ExtractValuesFromSpec(opts.Resource)
 	if err != nil {
 		return nil, err
 	}
 
 	chartSpec := helmclient.ChartSpec{
-		ReleaseName: opts.Resource.GetName(),
+		ReleaseName: meta.GetReleaseName(opts.Resource),
 		Namespace:   opts.Resource.GetNamespace(),
 		ChartName:   opts.PackageUrl,
 		Version:     opts.PackageVersion,
@@ -106,7 +107,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]controll
 		return nil, err
 	}
 
-	all := []controller.ObjectRef{}
+	all := []objectref.ObjectRef{}
 
 	for _, spec := range strings.Split(string(tpl), "---") {
 		if len(spec) == 0 {
@@ -144,7 +145,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]controll
 		}
 
 		apiVersion, kind := gvk.ToAPIVersionAndKind()
-		all = append(all, controller.ObjectRef{
+		all = append(all, objectref.ObjectRef{
 			APIVersion: apiVersion,
 			Kind:       kind,
 			Name:       unstructuredObj.GetName(),
@@ -160,7 +161,7 @@ type CheckResourceOptions struct {
 	DiscoveryClient *discovery.DiscoveryClient
 }
 
-func CheckResource(ctx context.Context, ref controller.ObjectRef, opts CheckResourceOptions) (*controller.ObjectRef, error) {
+func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResourceOptions) (*objectref.ObjectRef, error) {
 	gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
 	if err != nil {
 		return nil, err

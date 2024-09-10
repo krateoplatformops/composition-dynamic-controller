@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -18,7 +19,7 @@ type UpdateOptions struct {
 
 func Update(ctx context.Context, opts UpdateOptions) error {
 	chartSpec := helmclient.ChartSpec{
-		ReleaseName:     opts.Resource.GetName(),
+		ReleaseName:     meta.GetReleaseName(opts.Resource),
 		Namespace:       opts.Resource.GetNamespace(),
 		Repo:            opts.Repo,
 		ChartName:       opts.ChartName,

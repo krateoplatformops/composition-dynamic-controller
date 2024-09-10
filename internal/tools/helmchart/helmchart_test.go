@@ -86,6 +86,7 @@ func createDummyResource() *unstructured.Unstructured {
 		}
 
 	res := &unstructured.Unstructured{}
+	meta.SetReleaseName(res, "demo")
 	res.SetGroupVersionKind(schema.FromAPIVersionAndKind("dummy-charts.krateo.io/v0-2-0", "DummyChart"))
 	res.SetName("demo")
 	res.SetNamespace("demo-system")
