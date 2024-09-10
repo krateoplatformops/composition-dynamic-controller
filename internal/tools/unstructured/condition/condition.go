@@ -4,12 +4,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Condition types.
 const (
-	TypeReady         = "Ready"
-	ReasonAvailable   = "Available"
-	ReasonUnavailable = "Unavailable"
-	ReasonCreating    = "Creating"
-	ReasonDeleting    = "Deleting"
+	// TypeReady resources are believed to be ready to handle work.
+	TypeReady string = "Ready"
+
+	// TypeSynced resources are believed to be in sync with the
+	// Kubernetes resources that manage their lifecycle.
+	TypeSynced string = "Synced"
+)
+
+// Reasons a resource is or is not ready.
+const (
+	ReasonAvailable   string = "Available"
+	ReasonUnavailable string = "Unavailable"
+	ReasonCreating    string = "Creating"
+	ReasonDeleting    string = "Deleting"
+)
+
+// Reasons a resource is or is not synced.
+const (
+	ReasonReconcileSuccess string = "ReconcileSuccess"
+	ReasonReconcileError   string = "ReconcileError"
+	ReasonReconcilePaused  string = "ReconcilePaused"
 )
 
 func Unavailable() metav1.Condition {
@@ -38,6 +55,17 @@ func FailWithReason(reason string) metav1.Condition {
 		Status:             metav1.ConditionFalse,
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
+	}
+}
+
+// ReconcilePaused returns a condition that indicates reconciliation on
+// the managed resource is paused via the pause annotation.
+func ReconcilePaused() metav1.Condition {
+	return metav1.Condition{
+		Type:               TypeSynced,
+		Status:             metav1.ConditionFalse,
+		LastTransitionTime: metav1.Now(),
+		Reason:             ReasonReconcilePaused,
 	}
 }
 

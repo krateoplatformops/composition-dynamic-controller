@@ -77,6 +77,10 @@ const (
 	ActionDelete = "delete"
 )
 
+const (
+	ReleaseNameLabel = "krateo.io/release-name"
+)
+
 // AddFinalizer to the supplied Kubernetes object's metadata.
 func AddFinalizer(o metav1.Object, finalizer string) {
 	f := o.GetFinalizers()
@@ -292,4 +296,21 @@ func IsActionAllowed(o metav1.Object, action string) bool {
 
 	// ObjectActionDelete
 	return p == ManagementPolicyDefault || p == ManagementPolicyObserveDelete
+}
+
+func GetReleaseName(o metav1.Object) string {
+	return o.GetLabels()[ReleaseNameLabel]
+}
+
+// Set the release name as a label on the Composition resource.
+// Release name will be "name" if the annotation has not been already populated.
+func SetReleaseName(o metav1.Object, name string) {
+	mglabels := o.GetLabels()
+	if mglabels == nil {
+		mglabels = make(map[string]string)
+	}
+	if _, ok := mglabels[ReleaseNameLabel]; !ok {
+		mglabels[ReleaseNameLabel] = name
+	}
+	o.SetLabels(mglabels)
 }

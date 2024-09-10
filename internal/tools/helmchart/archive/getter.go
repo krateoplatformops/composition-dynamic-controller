@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/listwatcher"
 	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -108,74 +109,100 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 	}
 	log.Printf("[DBG] Found %d resources of type: %s\n", len(all.Items), gvrForDefinitions)
 
-	got := []*unstructured.Unstructured{}
-	for _, el := range all.Items {
-		group, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "managed", "group")
-		if err != nil {
-			log.Printf("[ERR] resolving 'status.group': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
-			continue
-		}
-		if !ok {
-			continue
-		}
+	// got := []*unstructured.Unstructured{}
+	// for _, el := range all.Items {
+	// 	group, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "managed", "group")
+	// 	if err != nil {
+	// 		log.Printf("[ERR] resolving 'status.group': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
+	// 		continue
+	// 	}
+	// 	if !ok {
+	// 		continue
+	// 	}
 
-		kind, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "managed", "kind")
-		if err != nil {
-			log.Printf("[ERR] resolving 'status.kind': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
-			continue
-		}
-		if !ok {
-			continue
-		}
+	// 	kind, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "managed", "kind")
+	// 	if err != nil {
+	// 		log.Printf("[ERR] resolving 'status.kind': %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
+	// 		continue
+	// 	}
+	// 	if !ok {
+	// 		continue
+	// 	}
 
-		compositionGroup := strings.Split(uns.GetAPIVersion(), "/")[0]
-		if group == compositionGroup && kind == uns.GetKind() {
-			got = append(got, el.DeepCopy())
-		}
-	}
+	// 	compositionGroup := strings.Split(uns.GetAPIVersion(), "/")[0]
+	// 	if group == compositionGroup && kind == uns.GetKind() {
+	// 		got = append(got, el.DeepCopy())
+	// 	}
+	// }
 
-	tot := len(got)
+	tot := len(all.Items)
 	if tot == 0 {
 		return nil,
 			fmt.Errorf("no definition found for '%v' in namespace: %s", gvr, uns.GetNamespace())
 	}
+	compositionDefinition := all.Items[0]
 
 	if tot > 1 {
-		return nil,
-			fmt.Errorf("too many definitions [%d] found for '%v' in namespace: %s", tot, gvr, uns.GetNamespace())
+		found := false
+		for _, el := range all.Items {
+			apiversion, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "apiVersion")
+			if err != nil {
+				log.Printf("[WARN] resolving 'status.apiVersion' - not a string: %s (%s@%s)\n", err.Error(), el.GetName(), el.GetNamespace())
+				continue
+			}
+			if !ok {
+				log.Printf("[WARN] resolving 'status.apiVersion' - not found: %s@%s)\n", el.GetName(), el.GetNamespace())
+				continue
+			}
+			versionSplit := strings.Split(apiversion, "/")
+			if len(versionSplit) != 2 {
+				log.Printf("[WARN] resolving 'status.apiVersion' - invalid format: (%s@%s)\n", el.GetName(), el.GetNamespace())
+				continue
+			}
+			version := versionSplit[1]
+			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] {
+				compositionDefinition = el
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil,
+				fmt.Errorf("too many definitions [%d] found for '%v' in namespace: %s", tot, gvr, uns.GetNamespace())
+		}
 	}
 
-	packageUrl, ok, err := unstructured.NestedString(got[0].UnstructuredContent(), "spec", "chart", "url")
+	packageUrl, ok, err := unstructured.NestedString(compositionDefinition.UnstructuredContent(), "spec", "chart", "url")
 	if err != nil {
-		log.Printf("[ERR] resolving 'status.packageUrl': %s (%s@%s)\n", err.Error(), got[0].GetName(), got[0].GetNamespace())
+		log.Printf("[ERR] resolving 'status.packageUrl': %s (%s@%s)\n", err.Error(), compositionDefinition.GetName(), compositionDefinition.GetNamespace())
 		return nil, err
 	}
 	if !ok {
 		return nil,
 			fmt.Errorf("missing 'status.packageUrl' in definition for '%v' in namespace: %s", gvr, uns.GetNamespace())
 	}
-	log.Printf("[DBG] packageUrl for (%s@%s): %s\n", got[0].GetName(), got[0].GetNamespace(), packageUrl)
+	log.Printf("[DBG] packageUrl for (%s@%s): %s\n", compositionDefinition.GetName(), compositionDefinition.GetNamespace(), packageUrl)
 
-	packageVersion, _, err := unstructured.NestedString(got[0].UnstructuredContent(), "spec", "chart", "version")
+	packageVersion, _, err := unstructured.NestedString(compositionDefinition.UnstructuredContent(), "spec", "chart", "version")
 	if err != nil {
-		log.Printf("[ERR] resolving 'spec.chart.version': %s (%s@%s)\n", err.Error(), got[0].GetName(), got[0].GetNamespace())
+		log.Printf("[ERR] resolving 'spec.chart.version': %s (%s@%s)\n", err.Error(), compositionDefinition.GetName(), compositionDefinition.GetNamespace())
 		return nil, err
 	}
-	repo, _, err := unstructured.NestedString(got[0].UnstructuredContent(), "spec", "chart", "repo")
+	repo, _, err := unstructured.NestedString(compositionDefinition.UnstructuredContent(), "spec", "chart", "repo")
 	if err != nil {
-		log.Printf("[ERR] resolving 'spec.chart.repo': %s (%s@%s)\n", err.Error(), got[0].GetName(), got[0].GetNamespace())
-		return nil, err
-	}
-
-	username, _, err := unstructured.NestedString(got[0].UnstructuredContent(), "spec", "chart", "credentials", "username")
-	if err != nil {
-		log.Printf("[ERR] resolving 'spec.chart.credentials.username': %s (%s@%s)\n", err.Error(), got[0].GetName(), got[0].GetNamespace())
+		log.Printf("[ERR] resolving 'spec.chart.repo': %s (%s@%s)\n", err.Error(), compositionDefinition.GetName(), compositionDefinition.GetNamespace())
 		return nil, err
 	}
 
-	passwordRef, _, err := unstructured.NestedStringMap(got[0].UnstructuredContent(), "spec", "chart", "credentials", "passwordRef")
+	username, _, err := unstructured.NestedString(compositionDefinition.UnstructuredContent(), "spec", "chart", "credentials", "username")
 	if err != nil {
-		log.Printf("[ERR] resolving 'spec.chart.credentials.passwordRef': %s (%s@%s)\n", err.Error(), got[0].GetName(), got[0].GetNamespace())
+		log.Printf("[ERR] resolving 'spec.chart.credentials.username': %s (%s@%s)\n", err.Error(), compositionDefinition.GetName(), compositionDefinition.GetNamespace())
+		return nil, err
+	}
+
+	passwordRef, _, err := unstructured.NestedStringMap(compositionDefinition.UnstructuredContent(), "spec", "chart", "credentials", "passwordRef")
+	if err != nil {
+		log.Printf("[ERR] resolving 'spec.chart.credentials.passwordRef': %s (%s@%s)\n", err.Error(), compositionDefinition.GetName(), compositionDefinition.GetNamespace())
 		return nil, err
 	}
 
@@ -191,9 +218,9 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			return nil, err
 		}
 	}
-	insecureSkipTLSverify, _, err := unstructured.NestedBool(got[0].UnstructuredContent(), "spec", "chart", "insecureSkipTLSverify")
+	insecureSkipTLSverify, _, err := unstructured.NestedBool(compositionDefinition.UnstructuredContent(), "spec", "chart", "insecureSkipTLSverify")
 	if err != nil {
-		log.Printf("[ERR] resolving 'spec.chart.insecureSkipTLSverify': %s (%s@%s)\n", err.Error(), got[0].GetName(), got[0].GetNamespace())
+		log.Printf("[ERR] resolving 'spec.chart.insecureSkipTLSverify': %s (%s@%s)\n", err.Error(), compositionDefinition.GetName(), compositionDefinition.GetNamespace())
 		return nil, err
 	}
 

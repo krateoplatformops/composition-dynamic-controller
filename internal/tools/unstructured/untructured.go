@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -15,7 +16,7 @@ import (
 )
 
 type NotAvailableError struct {
-	FailedObjectRef *controller.ObjectRef
+	FailedObjectRef *objectref.ObjectRef
 	Err             error
 }
 
@@ -23,7 +24,7 @@ func (r *NotAvailableError) Error() string {
 	if r.FailedObjectRef == nil {
 		return fmt.Sprintf("err %v", r.Err)
 	}
-	return fmt.Sprintf("failedObjectRef %s: err %v", r.FailedObjectRef, r.Err)
+	return fmt.Sprintf("failedObjectRef %v k8s.io/api/core/v1: err %v", r.FailedObjectRef, r.Err)
 }
 
 func IsAvailable(un *unstructured.Unstructured) (bool, error) {
@@ -40,7 +41,7 @@ func IsAvailable(un *unstructured.Unstructured) (bool, error) {
 		if has(positives, string(co.Type)) {
 			if string(co.Status) != "True" {
 				return false, &NotAvailableError{
-					FailedObjectRef: &controller.ObjectRef{
+					FailedObjectRef: &objectref.ObjectRef{
 						APIVersion: un.GetAPIVersion(),
 						Kind:       un.GetKind(),
 						Name:       un.GetName(),
@@ -87,15 +88,37 @@ func GetConditions(un *unstructured.Unstructured) []metav1.Condition {
 		if !ok {
 			return nil
 		}
+		var reason, message, t string
+		_, ok = m["reason"]
+		if ok {
+			reason = m["reason"].(string)
+		}
+		_, ok = m["message"]
+		if ok {
+			message = m["message"].(string)
+		}
+		_, ok = m["lastTransitionTime"]
+		if ok {
+			t = m["lastTransitionTime"].(string)
+		}
+
+		tm, err := time.Parse(time.RFC3339, t)
+		if err != nil {
+			return nil
+		}
+
 		x = append(x, metav1.Condition{
-			Type:   m["type"].(string),
-			Status: metav1.ConditionStatus(m["status"].(string)),
+			Type:               m["type"].(string),
+			Status:             metav1.ConditionStatus(m["status"].(string)),
+			LastTransitionTime: metav1.Time{Time: tm},
+			Reason:             reason,
+			Message:            message,
 		})
 	}
 	return x
 }
 
-func SetFailedObjectRef(un *unstructured.Unstructured, ref *controller.ObjectRef) error {
+func SetFailedObjectRef(un *unstructured.Unstructured, ref *objectref.ObjectRef) error {
 	return setNestedFieldNoCopy(un, map[string]interface{}{
 		"apiVersion": ref.APIVersion,
 		"kind":       ref.Kind,
@@ -104,7 +127,7 @@ func SetFailedObjectRef(un *unstructured.Unstructured, ref *controller.ObjectRef
 	}, "status", "failedObjectRef")
 }
 
-func ExtractFailedObjectRef(un *unstructured.Unstructured) (*controller.ObjectRef, error) {
+func ExtractFailedObjectRef(un *unstructured.Unstructured) (*objectref.ObjectRef, error) {
 	obj, ok, err := unstructured.NestedFieldNoCopy(un.Object, "status", "failedObjectRef")
 	if err != nil {
 		return nil, err
@@ -118,7 +141,7 @@ func ExtractFailedObjectRef(un *unstructured.Unstructured) (*controller.ObjectRe
 		return nil, err
 	}
 
-	ref := &controller.ObjectRef{}
+	ref := &objectref.ObjectRef{}
 	err = json.Unmarshal(dat, ref)
 	return ref, err
 }

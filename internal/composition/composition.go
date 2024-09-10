@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
@@ -66,6 +67,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		Str("name", mg.GetName()).
 		Str("namespace", mg.GetNamespace()).Logger()
 
+	meta.SetReleaseName(mg, mg.GetName())
+
 	if h.packageInfoGetter == nil {
 		return false, fmt.Errorf("helm chart package info getter must be specified")
 	}
@@ -82,7 +85,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return false, err
 	}
 
-	rel, err := helmchart.FindRelease(hc, mg.GetName())
+	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
 	if err != nil {
 		if !errors.Is(err, errReleaseNotFound) {
 			return false, err
@@ -196,6 +199,8 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 			DynamicClient:   h.dynamicClient,
 		})
 	}
+
+	meta.SetReleaseName(mg, mg.GetName())
 
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
@@ -330,7 +335,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	return nil
 }
 
-func (h *handler) Delete(ctx context.Context, ref controller.ObjectRef) error {
+func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
