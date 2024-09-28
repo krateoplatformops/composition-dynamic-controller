@@ -27,6 +27,8 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 		CreateNamespace: true,
 		UpgradeCRDs:     true,
 		Replace:         true,
+		CleanupOnFail:   true,
+		Install:         true,
 	}
 
 	dat, err := ExtractValuesFromSpec(opts.Resource)

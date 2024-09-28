@@ -6,6 +6,7 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -105,9 +106,9 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 		return nil
 	}
 
-	exists, err := c.externalClient.Observe(ctx, el)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
+	exists, actionErr := c.externalClient.Observe(ctx, el)
+	if actionErr != nil {
+		if apierrors.IsNotFound(actionErr) {
 			c.queue.Add(event{
 				eventType: Update,
 				objectRef: ref,
@@ -115,11 +116,34 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 			return nil
 		}
 
-		return err
+		e, err := c.fetch(ctx, ref, true)
+		if err != nil {
+			c.logger.Err(err).
+				Str("objectRef", ref.String()).
+				Msg("Resolving unstructured object.")
+			return err
+		}
+
+		err = unstructuredtools.SetCondition(e, condition.FailWithReason(fmt.Sprintf("failed to create object: %s", actionErr)))
+		if err != nil {
+			c.logger.Error().Err(err).Msg("Observe: setting condition.")
+			return err
+		}
+
+		err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
+			DiscoveryClient: c.discoveryClient,
+			DynamicClient:   c.dynamicClient,
+		})
+		if err != nil {
+			c.logger.Error().Err(err).Msg("Observe: updating status.")
+			return err
+		}
+
+		return actionErr
 	}
 
 	if !exists {
-		return c.externalClient.Create(ctx, el)
+		// return c.externalClient.Create(ctx, el)
 		// fmt.Println("Creating object")
 
 		// rateLimiter := workqueue.NewMaxOfRateLimiter(
@@ -129,14 +153,20 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 		// )
 
 		// c.queue = workqueue.NewRateLimitingQueue(rateLimiter)
+		// c.queue.AddRateLimited(event{
+		// 	eventType: Create,
+		// 	objectRef: ref,
+		// })
+
+		c.handleCreate(ctx, ref)
 
 		// len := c.queue.Len()
 		// for {
 		// 	if len < c.queue.Len() {
-		// 		fmt.Println("Queue length changed", len, c.queue.Len())
+		// 		// fmt.Println("Queue length changed", len, c.queue.Len())
 		// 		break
 		// 	}
-		// 	fmt.Println("Adding object to queue", len, c.queue.Len())
+		// 	// fmt.Println("Adding object to queue", len, c.queue.Len())
 		// 	c.queue.AddRateLimited(event{
 		// 		eventType: Create,
 		// 		objectRef: ref,
@@ -173,13 +203,13 @@ func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) 
 		// opts.Recorder.Event(newUns, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
 		err = unstructuredtools.SetCondition(el, condition.ReconcilePaused())
 		if err != nil {
-			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")
+			c.logger.Error().Err(err).Msg("CreateFunc: setting condition.")
 			return err
 		}
 
 		_, err := c.dynamicClient.Resource(c.gvr).Namespace(el.GetNamespace()).UpdateStatus(context.Background(), el, metav1.UpdateOptions{})
 		if err != nil {
-			c.logger.Error().Err(err).Msg("UpdateFunc: updating status.")
+			c.logger.Error().Err(err).Msg("CreateFunc: updating status.")
 			return err
 		}
 		// if the pause annotation is removed, we will have a chance to reconcile again and resume
@@ -187,7 +217,35 @@ func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) 
 		return nil
 	}
 
-	return c.externalClient.Create(ctx, el)
+	actionErr := c.externalClient.Create(ctx, el)
+
+	if actionErr != nil {
+		e, err := c.fetch(ctx, ref, true)
+		if err != nil {
+			c.logger.Err(err).
+				Str("objectRef", ref.String()).
+				Msg("Resolving unstructured object.")
+			return err
+		}
+
+		err = unstructuredtools.SetCondition(e, condition.FailWithReason(fmt.Sprintf("failed to create object: %s", actionErr)))
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")
+			return err
+		}
+
+		err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
+			DiscoveryClient: c.discoveryClient,
+			DynamicClient:   c.dynamicClient,
+		})
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: updating status.")
+			return err
+		}
+
+	}
+
+	return actionErr
 }
 
 func (c *Controller) handleUpdateEvent(ctx context.Context, ref objectref.ObjectRef) error {
@@ -225,7 +283,35 @@ func (c *Controller) handleUpdateEvent(ctx context.Context, ref objectref.Object
 		return nil
 	}
 
-	return c.externalClient.Update(ctx, el)
+	actionErr := c.externalClient.Update(ctx, el)
+
+	if actionErr != nil {
+		e, err := c.fetch(ctx, ref, true)
+		if err != nil {
+			c.logger.Err(err).
+				Str("objectRef", ref.String()).
+				Msg("Resolving unstructured object.")
+			return err
+		}
+
+		err = unstructuredtools.SetCondition(e, condition.FailWithReason(fmt.Sprintf("failed to update object: %s", actionErr)))
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")
+			return err
+		}
+
+		err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
+			DiscoveryClient: c.discoveryClient,
+			DynamicClient:   c.dynamicClient,
+		})
+		if err != nil {
+			c.logger.Error().Err(err).Msg("UpdateFunc: updating status.")
+			return err
+		}
+
+	}
+
+	return actionErr
 }
 
 func (c *Controller) handleDeleteEvent(ctx context.Context, ref objectref.ObjectRef) error {

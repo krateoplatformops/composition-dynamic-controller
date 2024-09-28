@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
+
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
-	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -158,7 +159,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectre
 
 type CheckResourceOptions struct {
 	DynamicClient   dynamic.Interface
-	DiscoveryClient *discovery.DiscoveryClient
+	DiscoveryClient discovery.DiscoveryInterface
 }
 
 func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResourceOptions) (*objectref.ObjectRef, error) {
@@ -187,7 +188,7 @@ func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResou
 		}
 	}
 
-	return nil, err
+	return &ref, err
 }
 
 func FindRelease(hc helmclient.Client, name string) (*release.Release, error) {

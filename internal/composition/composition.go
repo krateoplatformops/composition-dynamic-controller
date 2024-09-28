@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -55,7 +56,7 @@ func NewHandler(cfg *rest.Config, log *zerolog.Logger, pig archive.Getter) contr
 type handler struct {
 	logger            *zerolog.Logger
 	dynamicClient     dynamic.Interface
-	discoveryClient   *discovery.DiscoveryClient
+	discoveryClient   discovery.DiscoveryInterface
 	packageInfoGetter archive.Getter
 }
 
@@ -119,7 +120,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
 		log.Err(err).Msg("Rendering helm chart template")
-		return false, err
+		return false, fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
 		return true, nil
@@ -132,6 +133,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		DiscoveryClient: h.discoveryClient,
 	}
 
+	var managed []interface{}
+
 	for _, el := range all {
 		log.Debug().Str("package", pkg.URL).Msgf("Checking for resource %s.", el.String())
 
@@ -141,17 +144,33 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 				log.Warn().Err(err).
 					Str("package", pkg.URL).
 					Msgf("Composition not ready due to: %s.", el.String())
-				return false, nil
+
+				// _ = unstructuredtools.SetCondition(mg, condition.FailWithReason(fmt.Errorf("checking resource %s: %w", el.String(), err).Error()))
+
+				return false, fmt.Errorf("checking resource %s: %w", el.String(), err)
 			}
+
+			log.Warn().Err(err).
+				Str("package", pkg.URL).
+				Msgf("Composition not ready due to: %s.", el.String())
 
 			_ = unstructuredtools.SetFailedObjectRef(mg, ref)
 			_ = unstructuredtools.SetCondition(mg, condition.Unavailable())
 
-			return true, tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-				DiscoveryClient: h.discoveryClient,
-				DynamicClient:   h.dynamicClient,
-			})
+			return true, err
 		}
+
+		gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+		if err != nil {
+			return false, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
+		}
+		managed = append(managed, ManagedResource{
+			APIVersion: ref.APIVersion,
+			Resource:   gvr.Resource,
+			Name:       ref.Name,
+			Namespace:  ref.Namespace,
+		})
+
 	}
 
 	log.Debug().Str("package", pkg.URL).Msg("Composition ready.")
@@ -165,7 +184,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		})
 	}
 
-	// fmt.Println("Update status")
+	setManagedResources(mg, managed)
+	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
+	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
 	_ = unstructuredtools.SetCondition(mg, condition.Available())
 	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
@@ -175,7 +196,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		log.Err(err).Msgf("Updating cr status with condition: %v", condition.Available())
 	}
 
-	return true, err
+	return true, nil
 }
 
 func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) error {
@@ -236,20 +257,16 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		log.Err(err).Msgf("Installing helm chart: %s", pkg.URL)
 		meta.SetExternalCreateFailed(mg, time.Now())
+		// 	DiscoveryClient: h.discoveryClient,
+		// 	DynamicClient:   h.dynamicClient,
+		// })
+
 		_ = tools.Update(ctx, mg, tools.UpdateOptions{
 			DiscoveryClient: h.discoveryClient,
 			DynamicClient:   h.dynamicClient,
 		})
 
-		unstructuredtools.SetCondition(mg, condition.FailWithReason(
-			fmt.Sprintf("Creating failed: %s", err.Error())))
-
-		_ = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
-		})
-
-		return err
+		return fmt.Errorf("installing helm chart: %w", err)
 	}
 
 	log.Debug().Str("package", pkg.URL).Msg("Installing composition package.")
@@ -408,4 +425,21 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 	}
 
 	return helmclient.New(opts)
+}
+
+type ManagedResource struct {
+	APIVersion string `json:"apiVersion"`
+	Resource   string `json:"resource"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
+func setManagedResources(mg *unstructured.Unstructured, managed []interface{}) {
+	status := mg.Object["status"]
+	if status == nil {
+		status = map[string]interface{}{}
+	}
+	mapstatus := status.(map[string]interface{})
+	mapstatus["managed"] = managed
+	mg.Object["status"] = mapstatus
 }

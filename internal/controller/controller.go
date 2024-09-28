@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -32,6 +33,7 @@ const (
 
 type Options struct {
 	Client         dynamic.Interface
+	Discovery      discovery.DiscoveryInterface
 	GVR            schema.GroupVersionResource
 	Namespace      string
 	ResyncInterval time.Duration
@@ -41,14 +43,15 @@ type Options struct {
 }
 
 type Controller struct {
-	dynamicClient  dynamic.Interface
-	gvr            schema.GroupVersionResource
-	queue          workqueue.RateLimitingInterface
-	indexer        cache.Indexer
-	informer       cache.Controller
-	recorder       record.EventRecorder
-	logger         *zerolog.Logger
-	externalClient ExternalClient
+	dynamicClient   dynamic.Interface
+	discoveryClient discovery.DiscoveryInterface
+	gvr             schema.GroupVersionResource
+	queue           workqueue.RateLimitingInterface
+	indexer         cache.Indexer
+	informer        cache.Controller
+	recorder        record.EventRecorder
+	logger          *zerolog.Logger
+	externalClient  ExternalClient
 }
 
 func New(sid *shortid.Shortid, opts Options) *Controller {
@@ -61,6 +64,7 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 	queue := workqueue.NewRateLimitingQueue(rateLimiter)
 
 	lw, err := listwatcher.Create(listwatcher.CreateOptions{
+		Discovery: opts.Discovery,
 		Client:    opts.Client,
 		GVR:       opts.GVR,
 		Namespace: opts.Namespace,
@@ -192,14 +196,15 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 	)
 
 	return &Controller{
-		dynamicClient:  opts.Client,
-		gvr:            opts.GVR,
-		recorder:       opts.Recorder,
-		logger:         opts.Logger,
-		informer:       informer,
-		indexer:        indexer,
-		queue:          queue,
-		externalClient: opts.ExternalClient,
+		dynamicClient:   opts.Client,
+		discoveryClient: opts.Discovery,
+		gvr:             opts.GVR,
+		recorder:        opts.Recorder,
+		logger:          opts.Logger,
+		informer:        informer,
+		indexer:         indexer,
+		queue:           queue,
+		externalClient:  opts.ExternalClient,
 	}
 }
 

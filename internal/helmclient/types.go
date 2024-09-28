@@ -195,6 +195,16 @@ type ChartSpec struct {
 	// KeepHistory indicates whether to retain or purge the release history during uninstall
 	// +optional
 	KeepHistory bool `json:"keepHistory,omitempty"`
+	// Install is a purely informative flag that indicates whether this upgrade was done in "install" mode.
+	//
+	// Applications may use this to determine whether this Upgrade operation was done as part of a
+	// pure upgrade (Upgrade.Install == false) or as part of an install-or-upgrade operation
+	// (Upgrade.Install == true).
+	//
+	// Setting this to `true` will NOT cause `Upgrade` to perform an install if the release does not exist.
+	// That process must be handled by creating an Install action directly. See cmd/upgrade.go for an
+	// example of how this flag is used.
+	Install bool `json:"install,omitempty"`
 
 	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`
