@@ -29,6 +29,7 @@ import (
 
 const (
 	reasonReconciliationPaused string = "ReconciliationPaused"
+	reasonReconciliationFailed string = "ReconciliationFailed"
 )
 
 type Options struct {

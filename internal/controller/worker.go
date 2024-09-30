@@ -9,6 +9,7 @@ import (
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -89,7 +90,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 
 	if meta.IsPaused(el) {
 		c.logger.Debug().Msgf("Reconciliation is paused via the pause annotation %s: %s; %s: %s", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
-		// opts.Recorder.Event(newUns, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
+		c.recorder.Event(el, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")
 		err = unstructuredtools.SetCondition(el, condition.ReconcilePaused())
 		if err != nil {
 			c.logger.Error().Err(err).Msg("UpdateFunc: setting condition.")

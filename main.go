@@ -111,7 +111,7 @@ func main() {
 		}
 	}
 
-	handler := composition.NewHandler(cfg, &log, pig)
+	handler := composition.NewHandler(cfg, &log, pig, rec)
 
 	log.Info().
 		Str("build", Build).

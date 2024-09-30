@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 
@@ -32,9 +33,22 @@ var (
 	errCreateIncomplete = "cannot determine creation result - remove the " + meta.AnnotationKeyExternalCreatePending + " annotation if it is safe to proceed"
 )
 
+const (
+	reasonCreated  = "CompositionCreated"
+	reasonDeleted  = "CompositionDeleted"
+	reasonReady    = "CompositionReady"
+	reasonNotReady = "CompositionNotReady"
+	reasonUpdated  = "CompositionUpdated"
+)
+
+const (
+	eventTypeNormal  = "Normal"
+	eventTypeWarning = "Warning"
+)
+
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log *zerolog.Logger, pig archive.Getter) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log *zerolog.Logger, pig archive.Getter, event record.EventRecorder) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Creating dynamic client.")
@@ -50,6 +64,7 @@ func NewHandler(cfg *rest.Config, log *zerolog.Logger, pig archive.Getter) contr
 		dynamicClient:     dyn,
 		discoveryClient:   dis,
 		packageInfoGetter: pig,
+		eventRecorder:     event,
 	}
 }
 
@@ -58,6 +73,7 @@ type handler struct {
 	dynamicClient     dynamic.Interface
 	discoveryClient   discovery.DiscoveryInterface
 	packageInfoGetter archive.Getter
+	eventRecorder     record.EventRecorder
 }
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (bool, error) {
@@ -123,7 +139,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return false, fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
-		return true, nil
+		return false, nil
 	}
 
 	log.Debug().Str("package", pkg.URL).Msg("Checking composition resources.")
@@ -145,8 +161,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 					Str("package", pkg.URL).
 					Msgf("Composition not ready due to: %s.", el.String())
 
-				// _ = unstructuredtools.SetCondition(mg, condition.FailWithReason(fmt.Errorf("checking resource %s: %w", el.String(), err).Error()))
+				h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
+				setManagedResources(mg, managed)
 
+				_ = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+					DiscoveryClient: h.discoveryClient,
+					DynamicClient:   h.dynamicClient,
+				})
 				return false, fmt.Errorf("checking resource %s: %w", el.String(), err)
 			}
 
@@ -154,8 +175,15 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 				Str("package", pkg.URL).
 				Msgf("Composition not ready due to: %s.", el.String())
 
+			h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
 			_ = unstructuredtools.SetFailedObjectRef(mg, ref)
 			_ = unstructuredtools.SetCondition(mg, condition.Unavailable())
+			setManagedResources(mg, managed)
+
+			_ = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+				DiscoveryClient: h.discoveryClient,
+				DynamicClient:   h.dynamicClient,
+			})
 
 			return true, err
 		}
@@ -196,6 +224,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		log.Err(err).Msgf("Updating cr status with condition: %v", condition.Available())
 	}
 
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonReady, "Status is Ready for composition: %s", mg.GetName())
 	return true, nil
 }
 
@@ -257,9 +286,6 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		log.Err(err).Msgf("Installing helm chart: %s", pkg.URL)
 		meta.SetExternalCreateFailed(mg, time.Now())
-		// 	DiscoveryClient: h.discoveryClient,
-		// 	DynamicClient:   h.dynamicClient,
-		// })
 
 		_ = tools.Update(ctx, mg, tools.UpdateOptions{
 			DiscoveryClient: h.discoveryClient,
@@ -272,6 +298,9 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	log.Debug().Str("package", pkg.URL).Msg("Installing composition package.")
 
 	meta.SetExternalCreatePending(mg, time.Now())
+
+	unstructuredtools.SetCondition(mg, condition.Creating())
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Created composition: %s", mg.GetName())
 	return tools.Update(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
@@ -349,6 +378,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	log.Debug().Str("package", pkg.URL).Msg("Composition values updated.")
 
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonUpdated, "Updated composition: %s", mg.GetName())
 	return nil
 }
 
@@ -386,6 +416,8 @@ func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
 	if err != nil {
 		return err
 	}
+
+	h.eventRecorder.Eventf(&mg, eventTypeNormal, reasonDeleted, "Deleted composition: %s", mg.GetName())
 
 	h.logger.Debug().Str("apiVersion", mg.GetAPIVersion()).
 		Str("kind", mg.GetKind()).
