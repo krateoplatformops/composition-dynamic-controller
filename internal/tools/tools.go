@@ -12,7 +12,7 @@ import (
 )
 
 type UpdateOptions struct {
-	DiscoveryClient *discovery.DiscoveryClient
+	DiscoveryClient discovery.DiscoveryInterface
 	DynamicClient   dynamic.Interface
 }
 
@@ -44,7 +44,7 @@ func UpdateStatus(ctx context.Context, el *unstructured.Unstructured, opts Updat
 	return err
 }
 
-func GVKtoGVR(dc *discovery.DiscoveryClient, gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
+func GVKtoGVR(dc discovery.DiscoveryInterface, gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
 	groupResources, err := restmapper.GetAPIGroupResources(dc)
 	if err != nil {
 		return schema.GroupVersionResource{}, err

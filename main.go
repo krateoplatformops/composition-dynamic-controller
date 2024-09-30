@@ -17,6 +17,7 @@ import (
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
 	"github.com/rs/zerolog"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -90,6 +91,11 @@ func main() {
 		log.Fatal().Err(err).Msg("Creating dynamic client.")
 	}
 
+	discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Creating discovery client.")
+	}
+
 	rec, err := eventrecorder.Create(cfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Creating event recorder.")
@@ -105,7 +111,7 @@ func main() {
 		}
 	}
 
-	handler := composition.NewHandler(cfg, &log, pig)
+	handler := composition.NewHandler(cfg, &log, pig, rec)
 
 	log.Info().
 		Str("build", Build).
@@ -121,6 +127,7 @@ func main() {
 		log.Fatal().Err(err).Msg("Creating shortid generator.")
 	}
 	ctrl := controller.New(sid, controller.Options{
+		Discovery:      discovery,
 		Client:         dyn,
 		ResyncInterval: *resyncInterval,
 		GVR: schema.GroupVersionResource{

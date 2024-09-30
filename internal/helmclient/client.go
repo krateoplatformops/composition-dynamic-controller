@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 
+	"helm.sh/helm/v3/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/spf13/pflag"
@@ -222,16 +223,55 @@ func (c *HelmClient) UpdateChartRepos() error {
 // InstallOrUpgradeChart installs or upgrades the provided chart and returns the corresponding release.
 // Namespace and other context is provided via the helmclient.Options struct when instantiating a client.
 func (c *HelmClient) InstallOrUpgradeChart(ctx context.Context, spec *ChartSpec, opts *GenericHelmOptions) (*release.Release, error) {
-	exists, err := c.chartExists(spec)
-	if err != nil {
+	// exists, err := c.chartExists(spec)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// if exists {
+	// 	return c.upgrade(ctx, spec, opts)
+	// }
+
+	// Fixes #7002 - Support reading values from STDIN for `upgrade` command
+	// Must load values AFTER determining if we have to call install so that values loaded from stdin are not read twice
+
+	// If a release does not exist, install it.
+	histClient := action.NewHistory(c.ActionConfig)
+	histClient.Max = 1
+	versions, err := histClient.Run(spec.ReleaseName)
+	if err == driver.ErrReleaseNotFound || isReleaseUninstalled(versions) {
+		// fmt.Println("Release not present. Installing it now.")
+		// Only print this to stdout for table output
+		instClient := action.NewInstall(c.ActionConfig)
+		instClient.CreateNamespace = spec.CreateNamespace
+		instClient.Force = spec.Force
+		instClient.DryRun = spec.DryRun
+		instClient.DisableHooks = spec.DisableHooks
+		instClient.SkipCRDs = spec.SkipCRDs
+		instClient.Timeout = spec.Timeout
+		instClient.Wait = spec.Wait
+		instClient.WaitForJobs = spec.WaitForJobs
+		instClient.Namespace = spec.Namespace
+		instClient.Atomic = spec.Atomic
+		instClient.SubNotes = spec.SubNotes
+		instClient.Description = spec.Description
+		instClient.DependencyUpdate = spec.DependencyUpdate
+
+		if isReleaseUninstalled(versions) {
+			instClient.Replace = true
+		}
+
+		// rel, err := runInstall(args, instClient, valueOpts, out)
+		rel, err := c.install(ctx, spec, opts)
+		if err != nil {
+			return nil, err
+		}
+		return rel, nil
+	} else if err != nil {
 		return nil, err
 	}
 
-	if exists {
-		return c.upgrade(ctx, spec, opts)
-	}
-
-	return c.install(ctx, spec, opts)
+	return c.upgrade(ctx, spec, opts)
 }
 
 // InstallChart installs the provided chart and returns the corresponding release.
@@ -240,9 +280,54 @@ func (c *HelmClient) InstallChart(ctx context.Context, spec *ChartSpec, opts *Ge
 	return c.install(ctx, spec, opts)
 }
 
+func isReleaseUninstalled(versions []*release.Release) bool {
+	return len(versions) > 0 && versions[len(versions)-1].Info.Status == release.StatusUninstalled
+}
+
 // UpgradeChart upgrades the provided chart and returns the corresponding release.
 // Namespace and other context is provided via the helmclient.Options struct when instantiating a client.
 func (c *HelmClient) UpgradeChart(ctx context.Context, spec *ChartSpec, opts *GenericHelmOptions) (*release.Release, error) {
+	// fmt.Println("UpgradeChart called")
+	// Fixes #7002 - Support reading values from STDIN for `upgrade` command
+	// Must load values AFTER determining if we have to call install so that values loaded from stdin are not read twice
+	if spec.Install {
+		// If a release does not exist, install it.
+		histClient := action.NewHistory(c.ActionConfig)
+		histClient.Max = 1
+		versions, err := histClient.Run(spec.ReleaseName)
+		if err == driver.ErrReleaseNotFound || isReleaseUninstalled(versions) {
+			// fmt.Println("Release not present. Installing it now.")
+			// Only print this to stdout for table output
+			instClient := action.NewInstall(c.ActionConfig)
+			instClient.CreateNamespace = spec.CreateNamespace
+			instClient.Force = spec.Force
+			instClient.DryRun = spec.DryRun
+			instClient.DisableHooks = spec.DisableHooks
+			instClient.SkipCRDs = spec.SkipCRDs
+			instClient.Timeout = spec.Timeout
+			instClient.Wait = spec.Wait
+			instClient.WaitForJobs = spec.WaitForJobs
+			instClient.Namespace = spec.Namespace
+			instClient.Atomic = spec.Atomic
+			instClient.SubNotes = spec.SubNotes
+			instClient.Description = spec.Description
+			instClient.DependencyUpdate = spec.DependencyUpdate
+
+			if isReleaseUninstalled(versions) {
+				instClient.Replace = true
+			}
+
+			// rel, err := runInstall(args, instClient, valueOpts, out)
+			rel, err := c.install(ctx, spec, opts)
+			if err != nil {
+				return nil, err
+			}
+			return rel, nil
+		} else if err != nil {
+			return nil, err
+		}
+	}
+
 	return c.upgrade(ctx, spec, opts)
 }
 
@@ -1073,6 +1158,7 @@ func mergeUpgradeOptions(chartSpec *ChartSpec, upgradeOptions *action.Upgrade) {
 	upgradeOptions.DryRun = chartSpec.DryRun
 	upgradeOptions.SubNotes = chartSpec.SubNotes
 	upgradeOptions.WaitForJobs = chartSpec.WaitForJobs
+	upgradeOptions.Install = chartSpec.Install
 }
 
 // mergeUninstallReleaseOptions merges values of the provided chart to helm uninstall options used by the client.

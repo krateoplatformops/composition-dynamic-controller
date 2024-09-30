@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 )
@@ -19,6 +20,7 @@ const (
 
 type CreateOptions struct {
 	Client    dynamic.Interface
+	Discovery discovery.DiscoveryInterface
 	GVR       schema.GroupVersionResource
 	Namespace string
 }

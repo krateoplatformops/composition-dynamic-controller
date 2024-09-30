@@ -15,6 +15,8 @@ The composition-dynamic-controller is an operator designed to manage the lifecyc
 
 In practice, when a Custom Resource (CR) is created, the instance of composition-dynamic-controller enabled to manage this specific Group Version Kind (GVK), checks if a Helm release associated with the CR already exists in the cluster. If not, it performs an `helm install` using the values specified in the CR to create a new release. However, if the release does already exist, it instead executes an `helm upgrade`, updating the release's values with those specified in the CR. Additionally, when the CR is deleted from the cluster, the instance of the composition-dynamic-controller performs an `helm uninstall` on the release.
 
+The status of the composition definition is True if the resources contained in the chart with conditions have a positive type equal to True (positive types are "ready", "complete", "healthy", "active", "able").
+
 ## Examples
 
 ```yaml
