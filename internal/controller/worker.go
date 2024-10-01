@@ -117,7 +117,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 			return nil
 		}
 
-		e, err := c.fetch(ctx, ref, true)
+		e, err := c.fetch(ctx, ref, false)
 		if err != nil {
 			c.logger.Err(err).
 				Str("objectRef", ref.String()).
@@ -125,7 +125,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 			return err
 		}
 
-		err = unstructuredtools.SetCondition(e, condition.FailWithReason(fmt.Sprintf("failed to create object: %s", actionErr)))
+		err = unstructuredtools.SetCondition(e, condition.FailWithReason(fmt.Sprintf("failed to observe object: %s", actionErr)))
 		if err != nil {
 			c.logger.Error().Err(err).Msg("Observe: setting condition.")
 			return err
@@ -191,7 +191,7 @@ func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) 
 
 	// fmt.Println("Creating object - handleCreate")
 
-	el, err := c.fetch(ctx, ref, true)
+	el, err := c.fetch(ctx, ref, false)
 	if err != nil {
 		c.logger.Err(err).
 			Str("objectRef", ref.String()).
@@ -221,7 +221,7 @@ func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) 
 	actionErr := c.externalClient.Create(ctx, el)
 
 	if actionErr != nil {
-		e, err := c.fetch(ctx, ref, true)
+		e, err := c.fetch(ctx, ref, false)
 		if err != nil {
 			c.logger.Err(err).
 				Str("objectRef", ref.String()).
@@ -257,7 +257,7 @@ func (c *Controller) handleUpdateEvent(ctx context.Context, ref objectref.Object
 		return nil
 	}
 
-	el, err := c.fetch(ctx, ref, true)
+	el, err := c.fetch(ctx, ref, false)
 	if err != nil {
 		c.logger.Err(err).
 			Str("objectRef", ref.String()).
@@ -287,7 +287,7 @@ func (c *Controller) handleUpdateEvent(ctx context.Context, ref objectref.Object
 	actionErr := c.externalClient.Update(ctx, el)
 
 	if actionErr != nil {
-		e, err := c.fetch(ctx, ref, true)
+		e, err := c.fetch(ctx, ref, false)
 		if err != nil {
 			c.logger.Err(err).
 				Str("objectRef", ref.String()).
