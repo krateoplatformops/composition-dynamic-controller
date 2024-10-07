@@ -149,7 +149,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		DiscoveryClient: h.discoveryClient,
 	}
 
-	var managed []interface{}
+	managed, err := populateManagedResources(h.discoveryClient, all)
+	if err != nil {
+		log.Err(err).Msg("Populating managed resources")
+		return false, err
+	}
 
 	for _, el := range all {
 		log.Debug().Str("package", pkg.URL).Msgf("Checking for resource %s.", el.String())
@@ -187,18 +191,6 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 			return true, err
 		}
-
-		gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
-		if err != nil {
-			return false, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
-		}
-		managed = append(managed, ManagedResource{
-			APIVersion: ref.APIVersion,
-			Resource:   gvr.Resource,
-			Name:       ref.Name,
-			Namespace:  ref.Namespace,
-		})
-
 	}
 
 	log.Debug().Str("package", pkg.URL).Msg("Composition ready.")
@@ -474,4 +466,22 @@ func setManagedResources(mg *unstructured.Unstructured, managed []interface{}) {
 	mapstatus := status.(map[string]interface{})
 	mapstatus["managed"] = managed
 	mg.Object["status"] = mapstatus
+}
+
+func populateManagedResources(discovery discovery.DiscoveryInterface, resources []objectref.ObjectRef) ([]interface{}, error) {
+	var managed []interface{}
+	for _, ref := range resources {
+		gvr, err := tools.GVKtoGVR(discovery, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+		if err != nil {
+			return nil, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
+		}
+		managed = append(managed, ManagedResource{
+			APIVersion: ref.APIVersion,
+			Resource:   gvr.Resource,
+			Name:       ref.Name,
+			Namespace:  ref.Namespace,
+		})
+	}
+
+	return managed, nil
 }
