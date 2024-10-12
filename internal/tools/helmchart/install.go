@@ -6,6 +6,7 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -16,6 +17,7 @@ type Credentials struct {
 }
 
 type InstallOptions struct {
+	CheckResourceOptions
 	HelmClient  helmclient.Client
 	ChartName   string
 	Resource    *unstructured.Unstructured
@@ -49,9 +51,22 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	}
 	uid := opts.Resource.GetUID()
 
+	gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, opts.Resource.GetObjectKind().GroupVersionKind())
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get GVR: %w", err)
+	}
+
 	dat, err = AddOrUpdateFieldInValues(dat, uid, "global", "compositionId")
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to add compositionId to values: %w", err)
+	}
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetAPIVersion(), "global", "compositionApiVersion")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add compositionApiVersion to values: %w", err)
+	}
+	dat, err = AddOrUpdateFieldInValues(dat, gvr.Resource, "global", "compositionResource")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add compositionResource to values: %w", err)
 	}
 
 	claimGen := opts.Resource.GetGeneration()
