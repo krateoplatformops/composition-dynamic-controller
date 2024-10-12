@@ -261,6 +261,10 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	opts := helmchart.InstallOptions{
+		CheckResourceOptions: helmchart.CheckResourceOptions{
+			DynamicClient:   h.dynamicClient,
+			DiscoveryClient: h.discoveryClient,
+		},
 		HelmClient: hc,
 		ChartName:  pkg.URL,
 		Resource:   mg,
