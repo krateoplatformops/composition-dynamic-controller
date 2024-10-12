@@ -51,6 +51,9 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	}
 	uid := opts.Resource.GetUID()
 
+	if opts.DiscoveryClient == nil {
+		return nil, 0, fmt.Errorf("discovery client is required")
+	}
 	gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, opts.Resource.GetObjectKind().GroupVersionKind())
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get GVR: %w", err)
