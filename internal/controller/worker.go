@@ -131,7 +131,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 			return err
 		}
 
-		err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
+		_, err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
 			DiscoveryClient: c.discoveryClient,
 			DynamicClient:   c.dynamicClient,
 		})
@@ -235,7 +235,7 @@ func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) 
 			return err
 		}
 
-		err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
+		_, err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
 			DiscoveryClient: c.discoveryClient,
 			DynamicClient:   c.dynamicClient,
 		})
@@ -301,7 +301,7 @@ func (c *Controller) handleUpdateEvent(ctx context.Context, ref objectref.Object
 			return err
 		}
 
-		err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
+		_, err = tools.UpdateStatus(ctx, e, tools.UpdateOptions{
 			DiscoveryClient: c.discoveryClient,
 			DynamicClient:   c.dynamicClient,
 		})

@@ -168,10 +168,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 				h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
 				setManagedResources(mg, managed)
 
-				_ = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+				tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 					DiscoveryClient: h.discoveryClient,
 					DynamicClient:   h.dynamicClient,
 				})
+
 				return false, fmt.Errorf("checking resource %s: %w", el.String(), err)
 			}
 
@@ -184,11 +185,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 			_ = unstructuredtools.SetCondition(mg, condition.Unavailable())
 			setManagedResources(mg, managed)
 
-			_ = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+			_, err := tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 				DiscoveryClient: h.discoveryClient,
 				DynamicClient:   h.dynamicClient,
 			})
-
 			return true, err
 		}
 	}
@@ -198,17 +198,19 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	if meta.ExternalCreateIncomplete(mg) {
 		meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
 		meta.SetExternalCreateSucceeded(mg, time.Now())
-		return true, tools.Update(ctx, mg, tools.UpdateOptions{
+		_, err := tools.Update(ctx, mg, tools.UpdateOptions{
 			DiscoveryClient: h.discoveryClient,
 			DynamicClient:   h.dynamicClient,
 		})
+
+		return true, err
 	}
 
 	setManagedResources(mg, managed)
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
 	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
 	_ = unstructuredtools.SetCondition(mg, condition.Available())
-	err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
 	})
@@ -236,10 +238,11 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		if err != nil {
 			return err
 		}
-		return tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 			DiscoveryClient: h.discoveryClient,
 			DynamicClient:   h.dynamicClient,
 		})
+		return err
 	}
 
 	meta.SetReleaseName(mg, mg.GetName())
@@ -283,7 +286,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Err(err).Msgf("Installing helm chart: %s", pkg.URL)
 		meta.SetExternalCreateFailed(mg, time.Now())
 
-		_ = tools.Update(ctx, mg, tools.UpdateOptions{
+		_, err = tools.Update(ctx, mg, tools.UpdateOptions{
 			DiscoveryClient: h.discoveryClient,
 			DynamicClient:   h.dynamicClient,
 		})
@@ -295,12 +298,47 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	meta.SetExternalCreatePending(mg, time.Now())
 
-	unstructuredtools.SetCondition(mg, condition.Creating())
-	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Created composition: %s", mg.GetName())
-	return tools.Update(ctx, mg, tools.UpdateOptions{
+	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
 	})
+	if err != nil {
+		log.Err(err).Msg("Setting meta create pending annotation.")
+		return err
+	}
+
+	// Set the status to creating and set the managed resources
+	renderOpts := helmchart.RenderTemplateOptions{
+		HelmClient:     hc,
+		Resource:       mg,
+		PackageUrl:     pkg.URL,
+		PackageVersion: pkg.Version,
+		Repo:           pkg.Repo,
+	}
+	all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	if err != nil {
+		log.Err(err).Msg("Rendering helm chart template")
+		return fmt.Errorf("rendering helm chart template: %w", err)
+	}
+	if len(all) == 0 {
+		return nil
+	}
+
+	managed, err := populateManagedResources(h.discoveryClient, all)
+	if err != nil {
+		log.Err(err).Msg("Populating managed resources")
+		return fmt.Errorf("populating managed resources: %w", err)
+	}
+
+	setManagedResources(mg, managed)
+
+	unstructuredtools.SetCondition(mg, condition.Creating())
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Created composition: %s", mg.GetName())
+	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		DiscoveryClient: h.discoveryClient,
+		DynamicClient:   h.dynamicClient,
+	})
+	return err
 }
 
 func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) error {
@@ -320,14 +358,15 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Warn().Msg(errCreateIncomplete)
 		_ = unstructuredtools.SetCondition(mg, condition.Creating())
 
-		return tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		_, err := tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 			DiscoveryClient: h.discoveryClient,
 			DynamicClient:   h.dynamicClient,
 		})
+		return err
 	}
 
 	meta.SetExternalCreatePending(mg, time.Now())
-	err := tools.Update(ctx, mg, tools.UpdateOptions{
+	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
 	})
@@ -372,10 +411,53 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	log.Debug().Str("package", pkg.URL).Msg("Composition values updated.")
+	meta.SetExternalCreatePending(mg, time.Now())
+	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
+		DiscoveryClient: h.discoveryClient,
+		DynamicClient:   h.dynamicClient,
+	})
+	if err != nil {
+		log.Err(err).Msg("Setting meta create pending annotation.")
+		return err
+	}
 
-	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonUpdated, "Updated composition: %s", mg.GetName())
-	return nil
+	// Update the composition values in the status.
+	renderOpts := helmchart.RenderTemplateOptions{
+		HelmClient:     hc,
+		Resource:       mg,
+		PackageUrl:     pkg.URL,
+		PackageVersion: pkg.Version,
+		Repo:           pkg.Repo,
+	}
+	all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	if err != nil {
+		log.Err(err).Msg("Rendering helm chart template")
+		return fmt.Errorf("rendering helm chart template: %w", err)
+	}
+	if len(all) == 0 {
+		return nil
+	}
+
+	managed, err := populateManagedResources(h.discoveryClient, all)
+	if err != nil {
+		log.Err(err).Msg("Populating managed resources")
+		return fmt.Errorf("populating managed resources: %w", err)
+	}
+
+	setManagedResources(mg, managed)
+
+	log.Debug().Str("package", pkg.URL).Msg("Composition values updated.")
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Updated composition: %s", mg.GetName())
+
+	cond := condition.Creating()
+	cond.Message = "Composition values updated."
+	unstructuredtools.SetCondition(mg, cond)
+
+	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+		DiscoveryClient: h.discoveryClient,
+		DynamicClient:   h.dynamicClient,
+	})
+	return err
 }
 
 func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
