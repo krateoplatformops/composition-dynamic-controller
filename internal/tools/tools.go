@@ -16,32 +16,32 @@ type UpdateOptions struct {
 	DynamicClient   dynamic.Interface
 }
 
-func Update(ctx context.Context, el *unstructured.Unstructured, opts UpdateOptions) error {
+func Update(ctx context.Context, el *unstructured.Unstructured, opts UpdateOptions) (*unstructured.Unstructured, error) {
 	gvr, err := GVKtoGVR(opts.DiscoveryClient, el.GroupVersionKind())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = opts.DynamicClient.Resource(gvr).
+	res, err := opts.DynamicClient.Resource(gvr).
 		Namespace(el.GetNamespace()).
 		Update(ctx, el, metav1.UpdateOptions{
 			FieldValidation: "Ignore",
 		})
 
-	return err
+	return res, err
 }
 
-func UpdateStatus(ctx context.Context, el *unstructured.Unstructured, opts UpdateOptions) error {
+func UpdateStatus(ctx context.Context, el *unstructured.Unstructured, opts UpdateOptions) (*unstructured.Unstructured, error) {
 	gvr, err := GVKtoGVR(opts.DiscoveryClient, el.GroupVersionKind())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = opts.DynamicClient.Resource(gvr).
+	res, err := opts.DynamicClient.Resource(gvr).
 		Namespace(el.GetNamespace()).
 		UpdateStatus(ctx, el, metav1.UpdateOptions{})
 
-	return err
+	return res, err
 }
 
 func GVKtoGVR(dc discovery.DiscoveryInterface, gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
