@@ -4,12 +4,16 @@ import (
 	"bytes"
 
 	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/kustomize/kyaml/kio"
 )
 
 type labelsPostRender struct {
-	UID types.UID
+	UID                  types.UID
+	CompositionGVR       schema.GroupVersionResource
+	CompositionName      string
+	CompositionNamespace string
 }
 
 func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifests *bytes.Buffer, err error) {
@@ -24,6 +28,11 @@ func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifes
 		}
 		// your labels
 		labels["krateo.io/composition-id"] = string(r.UID)
+		labels["krateo.io/composition-group"] = r.CompositionGVR.Group
+		labels["krateo.io/composition-version"] = r.CompositionGVR.Version
+		labels["krateo.io/composition-resource"] = r.CompositionGVR.Resource
+		labels["krateo.io/composition-name"] = r.CompositionName
+		labels["krateo.io/composition-namespace"] = r.CompositionNamespace
 		v.SetLabels(labels)
 	}
 
