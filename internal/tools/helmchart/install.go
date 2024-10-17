@@ -77,7 +77,11 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 
 	helmOpts := &helmclient.GenericHelmOptions{
 		PostRenderer: &labelsPostRender{
-			UID: uid,
+			UID:                   uid,
+			CompositionAPIVersion: opts.Resource.GetAPIVersion(),
+			CompositionName:       opts.Resource.GetName(),
+			CompositionNamespace:  opts.Resource.GetNamespace(),
+			CompositionResource:   gvr.Resource,
 		},
 	}
 	rel, err := opts.HelmClient.InstallOrUpgradeChart(ctx, &chartSpec, helmOpts)

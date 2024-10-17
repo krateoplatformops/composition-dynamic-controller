@@ -9,7 +9,11 @@ import (
 )
 
 type labelsPostRender struct {
-	UID types.UID
+	UID                   types.UID
+	CompositionAPIVersion string
+	CompositionName       string
+	CompositionNamespace  string
+	CompositionResource   string
 }
 
 func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifests *bytes.Buffer, err error) {
@@ -24,6 +28,10 @@ func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifes
 		}
 		// your labels
 		labels["krateo.io/composition-id"] = string(r.UID)
+		labels["krateo.io/composition-apiVersion"] = r.CompositionAPIVersion
+		labels["krateo.io/composition-name"] = r.CompositionName
+		labels["krateo.io/composition-namespace"] = r.CompositionNamespace
+		labels["krateo.io/composition-resource"] = r.CompositionResource
 		v.SetLabels(labels)
 	}
 
