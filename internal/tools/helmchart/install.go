@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/client/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 	"helm.sh/helm/v3/pkg/release"

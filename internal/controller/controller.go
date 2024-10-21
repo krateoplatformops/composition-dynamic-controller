@@ -166,6 +166,8 @@ func New(sid *shortid.Shortid, opts Options) *Controller {
 					return
 				}
 
+				fmt.Println("Starting delete func")
+
 				if meta.IsPaused(el) {
 					opts.Logger.Debug().Msgf("Reconciliation is paused via the pause annotation %s: %s; %s: %s", "annotation", meta.AnnotationKeyReconciliationPaused, "value", "true")
 					opts.Recorder.Event(el, corev1.EventTypeNormal, reasonReconciliationPaused, "Reconciliation is paused via the pause annotation")

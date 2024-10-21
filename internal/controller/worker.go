@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	maxRetries = 5
+	maxRetries    = 5
+	finalizerName = "composition.krateo.io/finalizer"
 )
 
 func (c *Controller) runWorker(ctx context.Context) {
@@ -28,6 +29,7 @@ func (c *Controller) runWorker(ctx context.Context) {
 		}
 		defer c.queue.Done(obj)
 
+		fmt.Println("Processing object", obj)
 		err := c.processItem(ctx, obj)
 		c.handleErr(err, obj)
 	}
@@ -57,6 +59,36 @@ func (c *Controller) processItem(ctx context.Context, obj interface{}) error {
 	if !ok {
 		c.logger.Error().Msgf("unexpected event: %v", obj)
 		return nil
+	}
+
+	el, err := c.fetch(ctx, evt.objectRef, false)
+	if err != nil {
+		c.logger.Err(err).
+			Str("objectRef", evt.objectRef.String()).
+			Msg("Resolving unstructured object.")
+		return err
+	}
+
+	if el.GetDeletionTimestamp().IsZero() {
+		finalizers := el.GetFinalizers()
+		exist := false
+		for _, finalizer := range finalizers {
+			if finalizer == finalizerName {
+				exist = true
+				break
+			}
+		}
+
+		if !exist {
+			el.SetFinalizers(append(finalizers, finalizerName))
+			_, err = c.dynamicClient.Resource(c.gvr).Namespace(el.GetNamespace()).Update(context.Background(), el, metav1.UpdateOptions{})
+			if err != nil {
+				c.logger.Error().Err(err).Msg("UpdateFunc: adding finalizer.")
+				return err
+			}
+		}
+	} else {
+		c.handleDeleteEvent(ctx, evt.objectRef)
 	}
 
 	c.logger.Debug().Str("event", string(evt.eventType)).Str("ref", evt.objectRef.String()).Msg("processing")
@@ -323,7 +355,29 @@ func (c *Controller) handleDeleteEvent(ctx context.Context, ref objectref.Object
 		return nil
 	}
 
-	return c.externalClient.Delete(ctx, ref)
+	fmt.Println("Deleting element")
+
+	el, err := c.fetch(ctx, ref, false)
+	if err != nil {
+		c.logger.Err(err).
+			Str("objectRef", ref.String()).
+			Msg("Resolving unstructured object.")
+		return err
+	}
+
+	err = c.externalClient.Delete(ctx, el)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("DeleteFunc: deleting object")
+		return err
+	}
+
+	el.SetFinalizers([]string{})
+	_, err = c.dynamicClient.Resource(c.gvr).Namespace(el.GetNamespace()).Update(context.Background(), el, metav1.UpdateOptions{})
+	if err != nil {
+		c.logger.Error().Err(err).Msg("DeleteFunc: removing finalizer.")
+		return err
+	}
+	return nil
 }
 
 func (c *Controller) fetch(ctx context.Context, ref objectref.ObjectRef, clean bool) (*unstructured.Unstructured, error) {

@@ -10,7 +10,7 @@ import (
 
 	helmstorage "helm.sh/helm/v3/pkg/storage"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/client/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 
 	"github.com/rs/zerolog"

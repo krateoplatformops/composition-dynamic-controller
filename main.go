@@ -9,7 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
+	getter "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/restclient"
+
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/client"
+	helmComposition "github.com/krateoplatformops/composition-dynamic-controller/internal/composition/helmComposition"
+	restComposition "github.com/krateoplatformops/composition-dynamic-controller/internal/composition/restComposition"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/eventrecorder"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/shortid"
@@ -50,6 +54,8 @@ func main() {
 		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
 	chart := flag.String("chart",
 		support.EnvString("COMPOSITION_CONTROLLER_CHART", ""), "chart")
+	cliType := flag.String("client",
+		support.EnvString("COMPOSITION_CLIENT_TYPE", string(client.ClientHelm)), "client type [REST|HELM]]")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -57,6 +63,12 @@ func main() {
 	}
 
 	flag.Parse()
+
+	clientType, err := client.ToClientType(*cliType)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Initialize the logger
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -76,7 +88,6 @@ func main() {
 
 	// Kubernetes configuration
 	var cfg *rest.Config
-	var err error
 	if len(*kubeconfig) > 0 {
 		cfg, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	} else {
@@ -100,18 +111,27 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Creating event recorder.")
 	}
-
-	var pig archive.Getter
-	if len(*chart) > 0 {
-		pig = archive.Static(*chart)
-	} else {
-		pig, err = archive.Dynamic(cfg, *debug)
+	var handler controller.ExternalClient
+	switch clientType {
+	case client.ClientREST:
+		var swg getter.Getter
+		swg, err = getter.Dynamic(cfg)
 		if err != nil {
 			log.Fatal().Err(err).Msg("Creating chart url info getter.")
 		}
+		handler = restComposition.NewHandler(cfg, &log, swg)
+	case client.ClientHelm:
+		var pig archive.Getter
+		if len(*chart) > 0 {
+			pig = archive.Static(*chart)
+		} else {
+			pig, err = archive.Dynamic(cfg, *debug)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Creating chart url info getter.")
+			}
+		}
+		handler = helmComposition.NewHandler(cfg, &log, pig, rec)
 	}
-
-	handler := composition.NewHandler(cfg, &log, pig, rec)
 
 	log.Info().
 		Str("build", Build).

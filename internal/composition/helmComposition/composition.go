@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/client/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
@@ -460,23 +460,23 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	return err
 }
 
-func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
+func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
 
-	mg := unstructured.Unstructured{}
-	mg.SetAPIVersion(ref.APIVersion)
-	mg.SetKind(ref.Kind)
-	mg.SetName(ref.Name)
-	mg.SetNamespace(ref.Namespace)
+	// mg := unstructured.Unstructured{}
+	// mg.SetAPIVersion(ref.APIVersion)
+	// mg.SetKind(ref.Kind)
+	// mg.SetName(ref.Name)
+	// mg.SetNamespace(ref.Namespace)
 
-	hc, err := h.helmClientForResource(&mg, nil)
+	hc, err := h.helmClientForResource(mg, nil)
 	if err != nil {
 		return err
 	}
 
-	pkg, err := h.packageInfoGetter.Get(&mg)
+	pkg, err := h.packageInfoGetter.Get(mg)
 	if err != nil {
 		return err
 	}
@@ -495,7 +495,7 @@ func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
 		return err
 	}
 
-	h.eventRecorder.Eventf(&mg, eventTypeNormal, reasonDeleted, "Deleted composition: %s", mg.GetName())
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonDeleted, "Deleted composition: %s", mg.GetName())
 
 	h.logger.Debug().Str("apiVersion", mg.GetAPIVersion()).
 		Str("kind", mg.GetKind()).

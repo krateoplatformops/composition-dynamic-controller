@@ -8,8 +8,8 @@ import (
 
 	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
 
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/client/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 
@@ -188,7 +188,7 @@ func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResou
 		}
 	}
 
-	return &ref, err
+	return &ref, nil
 }
 
 func FindRelease(hc helmclient.Client, name string) (*release.Release, error) {

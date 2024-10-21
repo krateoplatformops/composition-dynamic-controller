@@ -3,6 +3,7 @@ package unstructured
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -216,4 +217,34 @@ func encodeStruct(obj interface{}) (res interface{}, err error) {
 
 	err = json.Unmarshal(data, &res)
 	return
+}
+
+func GetFieldsFromUnstructured(u *unstructured.Unstructured, field string) (map[string]interface{}, error) {
+	spec, ok, err := unstructured.NestedFieldNoCopy(u.Object, field)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("%s not found", field)
+	}
+	fields := make(map[string]interface{})
+	if reflect.ValueOf(spec).CanInterface() {
+		iter := reflect.ValueOf(spec).MapRange()
+		for iter.Next() {
+			k := iter.Key()
+			v := iter.Value()
+			fields[k.String()] = v.Interface()
+		}
+	}
+	return fields, nil
+}
+
+func IsConditionSet(un *unstructured.Unstructured, cond metav1.Condition) bool {
+	conds := GetConditions(un)
+	for _, co := range conds {
+		if co.Type == cond.Type && co.Status == cond.Status && co.Reason == cond.Reason {
+			return true
+		}
+	}
+	return false
 }
