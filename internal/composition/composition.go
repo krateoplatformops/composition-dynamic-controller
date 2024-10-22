@@ -113,6 +113,19 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return false, nil
 	}
 
+	if meta.ExternalCreateIncomplete(mg) {
+		meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
+		meta.SetExternalCreateSucceeded(mg, time.Now())
+		mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
+			DiscoveryClient: h.discoveryClient,
+			DynamicClient:   h.dynamicClient,
+		})
+		if err != nil {
+			log.Err(err).Msg("Setting meta create succeeded annotation.")
+			return false, err
+		}
+	}
+
 	// Check if the package version in the CompositionDefinition is the same as the installed chart version.
 	if pkg.Version != rel.Chart.Metadata.Version {
 		log.Debug().Msg("Composition package version mismatch.")
@@ -155,6 +168,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return false, err
 	}
 
+	resourcesAvailable := true
+	resourcesExist := true
 	for _, el := range all {
 		log.Debug().Str("package", pkg.URL).Msgf("Checking for resource %s.", el.String())
 
@@ -168,12 +183,17 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 				h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
 				setManagedResources(mg, managed)
 
-				tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+				mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 					DiscoveryClient: h.discoveryClient,
 					DynamicClient:   h.dynamicClient,
 				})
+				if err != nil {
+					log.Err(err).Msgf("Updating cr status with condition: %v", condition.Unavailable())
+					return false, err
+				}
 
-				return false, fmt.Errorf("checking resource %s: %w", el.String(), err)
+				resourcesExist = false
+				continue
 			}
 
 			log.Warn().Err(err).
@@ -185,26 +205,27 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 			_ = unstructuredtools.SetCondition(mg, condition.Unavailable())
 			setManagedResources(mg, managed)
 
-			_, err := tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+			mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 				DiscoveryClient: h.discoveryClient,
 				DynamicClient:   h.dynamicClient,
 			})
-			return true, err
+			if err != nil {
+				log.Err(err).Msgf("Updating cr status with condition: %v", condition.Unavailable())
+				return true, err
+			}
+			resourcesAvailable = false
 		}
 	}
 
-	log.Debug().Str("package", pkg.URL).Msg("Composition ready.")
-
-	if meta.ExternalCreateIncomplete(mg) {
-		meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
-		meta.SetExternalCreateSucceeded(mg, time.Now())
-		_, err := tools.Update(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
-		})
-
-		return true, err
+	if !resourcesExist {
+		return false, nil
 	}
+
+	if !resourcesAvailable {
+		return true, fmt.Errorf("composition not ready")
+	}
+
+	log.Debug().Str("package", pkg.URL).Msg("Composition ready.")
 
 	setManagedResources(mg, managed)
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
