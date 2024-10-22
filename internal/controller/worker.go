@@ -110,11 +110,7 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 	exists, actionErr := c.externalClient.Observe(ctx, el)
 	if actionErr != nil {
 		if apierrors.IsNotFound(actionErr) {
-			c.queue.Add(event{
-				eventType: Update,
-				objectRef: ref,
-			})
-			return nil
+			return c.externalClient.Update(ctx, el)
 		}
 
 		e, err := c.fetch(ctx, ref, false)
@@ -139,43 +135,9 @@ func (c *Controller) handleObserve(ctx context.Context, ref objectref.ObjectRef)
 			c.logger.Error().Err(err).Msg("Observe: updating status.")
 			return err
 		}
-
-		return actionErr
 	}
-
 	if !exists {
-		// return c.externalClient.Create(ctx, el)
-		// fmt.Println("Creating object")
-
-		// rateLimiter := workqueue.NewMaxOfRateLimiter(
-		// 	workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 180*time.Second),
-		// 	// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
-		// 	&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
-		// )
-
-		// c.queue = workqueue.NewRateLimitingQueue(rateLimiter)
-		// c.queue.AddRateLimited(event{
-		// 	eventType: Create,
-		// 	objectRef: ref,
-		// })
-
-		c.handleCreate(ctx, ref)
-
-		// len := c.queue.Len()
-		// for {
-		// 	if len < c.queue.Len() {
-		// 		// fmt.Println("Queue length changed", len, c.queue.Len())
-		// 		break
-		// 	}
-		// 	// fmt.Println("Adding object to queue", len, c.queue.Len())
-		// 	c.queue.AddRateLimited(event{
-		// 		eventType: Create,
-		// 		objectRef: ref,
-		// 	})
-		// }
-
-		// fmt.Println("Object created", c.queue.Len())
-
+		return c.externalClient.Create(ctx, el)
 	}
 
 	return nil
@@ -219,7 +181,6 @@ func (c *Controller) handleCreate(ctx context.Context, ref objectref.ObjectRef) 
 	}
 
 	actionErr := c.externalClient.Create(ctx, el)
-
 	if actionErr != nil {
 		e, err := c.fetch(ctx, ref, false)
 		if err != nil {
