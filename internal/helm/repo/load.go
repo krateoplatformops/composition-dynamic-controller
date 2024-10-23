@@ -1,8 +1,7 @@
 package repo
 
 import (
-	"log"
-
+	"github.com/krateoplatformops/controller-generic/pkg/logging"
 	"sigs.k8s.io/yaml"
 )
 
@@ -10,7 +9,7 @@ import (
 //
 // The source parameter is only used for logging.
 // This will fail if API Version is not set (ErrNoAPIVersion) or if the unmarshal fails.
-func Load(data []byte, source string) (*IndexFile, error) {
+func Load(data []byte, source string, log logging.Logger) (*IndexFile, error) {
 	i := &IndexFile{}
 
 	if len(data) == 0 {
@@ -24,7 +23,7 @@ func Load(data []byte, source string) (*IndexFile, error) {
 	for name, cvs := range i.Entries {
 		for idx := len(cvs) - 1; idx >= 0; idx-- {
 			if cvs[idx] == nil {
-				log.Printf("skipping loading invalid entry for chart %q from %s: empty entry", name, source)
+				log.Debug("skipping invalid entry", "chart", name, "source", source, "reason", "empty entry")
 				continue
 			}
 			if cvs[idx].APIVersion == "" {

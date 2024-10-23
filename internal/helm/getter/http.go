@@ -28,7 +28,7 @@ func (g *repoGetter) Get(opts GetOptions) ([]byte, string, error) {
 		return nil, "", err
 	}
 
-	idx, err := repo.Load(buf, opts.URI)
+	idx, err := repo.Load(buf, opts.URI, opts.Logging)
 	if err != nil {
 		return nil, "", err
 	}

@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
+	"github.com/krateoplatformops/controller-generic/pkg/meta"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )

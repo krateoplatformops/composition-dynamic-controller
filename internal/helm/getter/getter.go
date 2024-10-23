@@ -7,9 +7,12 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/krateoplatformops/controller-generic/pkg/logging"
 )
 
 type GetOptions struct {
+	Logging               logging.Logger
 	URI                   string
 	Version               string
 	Repo                  string

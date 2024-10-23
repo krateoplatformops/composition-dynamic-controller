@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller/objectref"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
-
-	"github.com/rs/zerolog"
+	"github.com/krateoplatformops/controller-generic/pkg/controller"
+	"github.com/krateoplatformops/controller-generic/pkg/controller/objectref"
+	"github.com/krateoplatformops/controller-generic/pkg/logging"
+	"github.com/krateoplatformops/controller-generic/pkg/meta"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -24,8 +23,8 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
 
-	unstructuredtools "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/unstructured/condition"
+	unstructuredtools "github.com/krateoplatformops/controller-generic/pkg/tools/unstructured"
+	"github.com/krateoplatformops/controller-generic/pkg/tools/unstructured/condition"
 )
 
 var (
@@ -48,15 +47,15 @@ const (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log *zerolog.Logger, pig archive.Getter, event record.EventRecorder) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event record.EventRecorder) controller.ExternalClient {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating dynamic client.")
+		log.Debug("Creating dynamic client.", "error", err)
 	}
 
 	dis, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating discovery client.")
+		log.Debug("Creating discovery client.", "error", err)
 	}
 
 	return &handler{
@@ -69,7 +68,7 @@ func NewHandler(cfg *rest.Config, log *zerolog.Logger, pig archive.Getter, event
 }
 
 type handler struct {
-	logger            *zerolog.Logger
+	logger            logging.Logger
 	dynamicClient     dynamic.Interface
 	discoveryClient   discovery.DiscoveryInterface
 	packageInfoGetter archive.Getter
@@ -77,12 +76,11 @@ type handler struct {
 }
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (bool, error) {
-	log := h.logger.With().
-		Str("op", "Observe").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("op", "Observe").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
 	meta.SetReleaseName(mg, mg.GetName())
 
@@ -92,13 +90,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	pkg, err := h.packageInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting package info")
+		log.Debug("Getting package info", "error", err)
 		return false, err
 	}
 
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
-		log.Err(err).Msg("Getting helm client")
+		log.Debug("Getting helm client", "error", err)
 		return false, err
 	}
 
@@ -109,7 +107,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		}
 	}
 	if rel == nil {
-		log.Debug().Msg("Composition package not installed.")
+		log.Debug("Composition not found.")
 		return false, nil
 	}
 
@@ -121,14 +119,14 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 			DynamicClient:   h.dynamicClient,
 		})
 		if err != nil {
-			log.Err(err).Msg("Setting meta create succeeded annotation.")
+			log.Debug("Setting meta create succeeded annotation.", "error", err)
 			return false, err
 		}
 	}
 
 	// Check if the package version in the CompositionDefinition is the same as the installed chart version.
 	if pkg.Version != rel.Chart.Metadata.Version {
-		log.Debug().Msg("Composition package version mismatch.")
+		log.Debug("Composition package version mismatch.")
 		return false, nil
 	}
 
@@ -148,14 +146,15 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
-		log.Err(err).Msg("Rendering helm chart template")
+		// log.Err(err).Msg("Rendering helm chart template")
+		log.Debug("Rendering helm chart template", "error", err)
 		return false, fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
 		return false, nil
 	}
 
-	log.Debug().Str("package", pkg.URL).Msg("Checking composition resources.")
+	log.Debug("Checking composition resources", "package", pkg.URL)
 
 	opts := helmchart.CheckResourceOptions{
 		DynamicClient:   h.dynamicClient,
@@ -164,21 +163,20 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	managed, err := populateManagedResources(h.discoveryClient, all)
 	if err != nil {
-		log.Err(err).Msg("Populating managed resources")
+		log.Debug("Populating managed resources", "error", err)
 		return false, err
 	}
 
 	resourcesAvailable := true
 	resourcesExist := true
 	for _, el := range all {
-		log.Debug().Str("package", pkg.URL).Msgf("Checking for resource %s.", el.String())
+		log.WithValues("package", pkg.URL).Debug("Checking for resource", "resource", el.String())
 
 		ref, err := helmchart.CheckResource(ctx, el, opts)
 		if err != nil {
 			if ref == nil {
-				log.Warn().Err(err).
-					Str("package", pkg.URL).
-					Msgf("Composition not ready due to: %s.", el.String())
+				log.WithValues("package", pkg.URL).
+					Debug("Composition not ready", "error", err)
 
 				h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
 				setManagedResources(mg, managed)
@@ -188,17 +186,14 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 					DynamicClient:   h.dynamicClient,
 				})
 				if err != nil {
-					log.Err(err).Msgf("Updating cr status with condition: %v", condition.Unavailable())
+					log.Debug("Updating cr status with condition", "error", err, "condition", condition.Unavailable())
 					return false, err
 				}
 
 				resourcesExist = false
 				continue
 			}
-
-			log.Warn().Err(err).
-				Str("package", pkg.URL).
-				Msgf("Composition not ready due to: %s.", el.String())
+			log.Debug("Composition not ready", "package", pkg.URL, "error", err)
 
 			h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
 			_ = unstructuredtools.SetFailedObjectRef(mg, ref)
@@ -210,7 +205,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 				DynamicClient:   h.dynamicClient,
 			})
 			if err != nil {
-				log.Err(err).Msgf("Updating cr status with condition: %v", condition.Unavailable())
+				log.Debug("Updating cr status with condition", "error", err, "condition", condition.Unavailable())
 				return true, err
 			}
 			resourcesAvailable = false
@@ -225,7 +220,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return true, fmt.Errorf("composition not ready")
 	}
 
-	log.Debug().Str("package", pkg.URL).Msg("Composition ready.")
+	log.Debug("Composition ready", "package", pkg.URL)
 
 	setManagedResources(mg, managed)
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
@@ -236,7 +231,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msgf("Updating cr status with condition: %v", condition.Available())
+		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
 	}
 
 	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonReady, "Status is Ready for composition: %s", mg.GetName())
@@ -244,17 +239,22 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 }
 
 func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) error {
-	log := h.logger.With().
-		Str("op", "Create").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	// log := h.logger.With().
+	// 	Str("op", "Create").
+	// 	Str("apiVersion", mg.GetAPIVersion()).
+	// 	Str("kind", mg.GetKind()).
+	// 	Str("name", mg.GetName()).
+	// 	Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("op", "Create").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
 	meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
 
 	if meta.ExternalCreateIncomplete(mg) {
-		log.Warn().Msg(errCreateIncomplete)
+		log.Debug(errCreateIncomplete)
 		err := unstructuredtools.SetCondition(mg, condition.Creating())
 		if err != nil {
 			return err
@@ -274,13 +274,13 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	pkg, err := h.packageInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting package info")
+		log.Debug("Getting package info", "error", err)
 		return err
 	}
 
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
-		log.Err(err).Msg("Getting helm client")
+		log.Debug("Getting helm client", "error", err)
 		return err
 	}
 
@@ -304,7 +304,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	_, _, err = helmchart.Install(ctx, opts)
 	if err != nil {
-		log.Err(err).Msgf("Installing helm chart: %s", pkg.URL)
+		log.Debug("Installing helm chart", "package", pkg.URL, "error", err)
 		meta.SetExternalCreateFailed(mg, time.Now())
 
 		_, err = tools.Update(ctx, mg, tools.UpdateOptions{
@@ -315,7 +315,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("installing helm chart: %w", err)
 	}
 
-	log.Debug().Str("package", pkg.URL).Msg("Installing composition package.")
+	log.Debug("Installing composition package", "package", pkg.URL)
 
 	meta.SetExternalCreatePending(mg, time.Now())
 
@@ -324,7 +324,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Setting meta create pending annotation.")
+		log.Debug("Setting meta create pending annotation.", "error", err)
 		return err
 	}
 
@@ -338,7 +338,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
-		log.Err(err).Msg("Rendering helm chart template")
+		log.Debug("Rendering helm chart template", "error", err)
 		return fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
@@ -347,7 +347,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	managed, err := populateManagedResources(h.discoveryClient, all)
 	if err != nil {
-		log.Err(err).Msg("Populating managed resources")
+		log.Debug("Populating managed resources", "error", err)
 		return fmt.Errorf("populating managed resources: %w", err)
 	}
 
@@ -363,20 +363,19 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 }
 
 func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) error {
-	log := h.logger.With().
-		Str("op", "Update").
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("op", "Update").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
-	log.Debug().Msg("Handling composition values update.")
+	log.Debug("Handling composition values update.")
 
 	// If we started but never completed creation of an external resource we
 	// may have lost critical information.The safest thing to
 	// do is to refuse to proceed.
 	if meta.ExternalCreateIncomplete(mg) {
-		log.Warn().Msg(errCreateIncomplete)
+		log.Debug(errCreateIncomplete)
 		_ = unstructuredtools.SetCondition(mg, condition.Creating())
 
 		_, err := tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
@@ -392,7 +391,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Setting meta create pending annotation.")
+		log.Debug("Setting meta create pending annotation.", "error", err)
 		return err
 	}
 
@@ -402,13 +401,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	pkg, err := h.packageInfoGetter.Get(mg)
 	if err != nil {
-		log.Err(err).Msg("Getting package info")
+		log.Debug("Getting package info", "error", err)
 		return err
 	}
 
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
-		log.Err(err).Msg("Getting helm client")
+		log.Debug("Getting helm client", "error", err)
 		return err
 	}
 
@@ -428,7 +427,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	err = helmchart.Update(ctx, opts)
 	if err != nil {
-		log.Err(err).Msg("Performing helm chart update")
+		log.Debug("Performing helm chart update", "error", err)
 		return err
 	}
 
@@ -438,7 +437,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
-		log.Err(err).Msg("Setting meta create pending annotation.")
+		log.Debug("Setting meta create pending annotation.", "error", err)
 		return err
 	}
 
@@ -452,7 +451,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
-		log.Err(err).Msg("Rendering helm chart template")
+		log.Debug("Rendering helm chart template", "error", err)
 		return fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
@@ -461,13 +460,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	managed, err := populateManagedResources(h.discoveryClient, all)
 	if err != nil {
-		log.Err(err).Msg("Populating managed resources")
+		log.Debug("Populating managed resources", "error", err)
 		return fmt.Errorf("populating managed resources: %w", err)
 	}
 
 	setManagedResources(mg, managed)
 
-	log.Debug().Str("package", pkg.URL).Msg("Composition values updated.")
+	log.Debug("Composition values updated.", "package", pkg.URL)
 	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Updated composition: %s", mg.GetName())
 
 	cond := condition.Creating()
@@ -481,24 +480,38 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	return err
 }
 
-func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
+func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
+	// h.logger.Debug().Str("apiVersion", mg.GetAPIVersion()).
+	// Str("kind", mg.GetKind()).
+	// Str("name", mg.GetName()).
+	// Str("namespace", mg.GetNamespace()).
+	// Str("package", pkg.URL).
+
+	log := h.logger.WithValues("op", "Delete").
+		WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
+
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
 
-	mg := unstructured.Unstructured{}
-	mg.SetAPIVersion(ref.APIVersion)
-	mg.SetKind(ref.Kind)
-	mg.SetName(ref.Name)
-	mg.SetNamespace(ref.Namespace)
+	// mg := unstructured.Unstructured{}
+	// mg.SetAPIVersion(ref.APIVersion)
+	// mg.SetKind(ref.Kind)
+	// mg.SetName(ref.Name)
+	// mg.SetNamespace(ref.Namespace)
 
-	hc, err := h.helmClientForResource(&mg, nil)
+	hc, err := h.helmClientForResource(mg, nil)
 	if err != nil {
+		log.Debug("Getting helm client", "error", err)
 		return err
 	}
 
-	pkg, err := h.packageInfoGetter.Get(&mg)
+	pkg, err := h.packageInfoGetter.Get(mg)
 	if err != nil {
+		log.Debug("Getting package info", "error", err)
 		return err
 	}
 
@@ -513,27 +526,21 @@ func (h *handler) Delete(ctx context.Context, ref objectref.ObjectRef) error {
 
 	err = hc.UninstallRelease(&chartSpec)
 	if err != nil {
+		log.Debug("Uninstalling helm chart", "error", err)
 		return err
 	}
 
-	h.eventRecorder.Eventf(&mg, eventTypeNormal, reasonDeleted, "Deleted composition: %s", mg.GetName())
-
-	h.logger.Debug().Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).
-		Str("package", pkg.URL).
-		Msg("Composition package removed.")
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonDeleted, "Deleted composition: %s", mg.GetName())
+	log.Debug("Composition package removed.", "package", pkg.URL)
 
 	return nil
 }
 
 func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryAuth *helmclient.RegistryAuth) (helmclient.Client, error) {
-	log := h.logger.With().
-		Str("apiVersion", mg.GetAPIVersion()).
-		Str("kind", mg.GetKind()).
-		Str("name", mg.GetName()).
-		Str("namespace", mg.GetNamespace()).Logger()
+	log := h.logger.WithValues("apiVersion", mg.GetAPIVersion()).
+		WithValues("kind", mg.GetKind()).
+		WithValues("name", mg.GetName()).
+		WithValues("namespace", mg.GetNamespace())
 
 	opts := &helmclient.Options{
 		Namespace:        mg.GetNamespace(),
@@ -547,9 +554,9 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 			}
 
 			if len(v) > 0 {
-				log.Debug().Msgf(format, v)
+				log.Debug(fmt.Sprintf(format, v))
 			} else {
-				log.Debug().Msg(format)
+				log.Debug(format)
 			}
 		},
 		RegistryAuth: (registryAuth),
