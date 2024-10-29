@@ -10,21 +10,26 @@ import (
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/controller"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/eventrecorder"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/shortid"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/support"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
-	"github.com/rs/zerolog"
+	genctrl "github.com/krateoplatformops/unstructured-runtime"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/eventrecorder"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
-	serviceName = "composition-dynamic-controller"
+	serviceName             = "composition-dynamic-controller"
+	compositionVersionLabel = "krateo.io/composition-version"
 )
 
 var (
@@ -58,22 +63,8 @@ func main() {
 
 	flag.Parse()
 
-	// Initialize the logger
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-
-	// Default level for this log is info, unless debug flag is present
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	if *debug {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	}
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	zerolog.TimeFieldFormat = time.RFC3339
-
-	log := zerolog.New(os.Stdout).With().
-		Str("service", serviceName).
-		Timestamp().
-		Logger()
-
+	zl := zap.New(zap.UseDevMode(*debug))
+	log := logging.NewLogrLogger(zl.WithName(serviceName))
 	// Kubernetes configuration
 	var cfg *rest.Config
 	var err error
@@ -83,50 +74,52 @@ func main() {
 		cfg, err = rest.InClusterConfig()
 	}
 	if err != nil {
-		log.Fatal().Err(err).Msg("Building kubeconfig.")
+		log.Debug("Building kubeconfig.", "error", err)
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating dynamic client.")
+		log.Debug("Creating dynamic client.", "error", err)
 	}
 
 	discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating discovery client.")
+		log.Debug("Creating discovery client.", "error", err)
 	}
 
 	rec, err := eventrecorder.Create(cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating event recorder.")
+		log.Debug("Creating event recorder.", "error", err)
 	}
 
 	var pig archive.Getter
 	if len(*chart) > 0 {
 		pig = archive.Static(*chart)
 	} else {
-		pig, err = archive.Dynamic(cfg, *debug)
+		pig, err = archive.Dynamic(cfg, *debug, log)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Creating chart url info getter.")
+			log.Debug("Creating chart url info getter.", "error", err)
 		}
 	}
 
-	handler := composition.NewHandler(cfg, &log, pig, rec)
+	handler := composition.NewHandler(cfg, log, pig, rec)
 
-	log.Info().
-		Str("build", Build).
-		Bool("debug", *debug).
-		Dur("resyncInterval", *resyncInterval).
-		Str("group", *resourceGroup).
-		Str("version", *resourceVersion).
-		Str("resource", *resourceName).
-		Msgf("Starting %s.", serviceName)
+	log.WithValues("build", Build).
+		WithValues("debug", *debug).
+		WithValues("resyncInterval", *resyncInterval).
+		WithValues("group", *resourceGroup).
+		WithValues("version", *resourceVersion).
+		WithValues("resource", *resourceName).
+		Info("Starting composition dynamic controller.")
 
-	sid, err := shortid.New(1, shortid.DefaultABC, 2342)
+	// Create a label requirement for the composition version
+	labelreq, err := labels.NewRequirement(compositionVersionLabel, selection.Equals, []string{*resourceVersion})
 	if err != nil {
-		log.Fatal().Err(err).Msg("Creating shortid generator.")
+		log.Debug("Creating label requirement.", "error", err)
 	}
-	ctrl := controller.New(sid, controller.Options{
+	labelselector := labels.NewSelector().Add(*labelreq)
+
+	controller := genctrl.New(genctrl.Options{
 		Discovery:      discovery,
 		Client:         dyn,
 		ResyncInterval: *resyncInterval,
@@ -135,11 +128,16 @@ func main() {
 			Version:  *resourceVersion,
 			Resource: *resourceName,
 		},
-		Namespace: *namespace,
-		Recorder:  rec,
-		Logger:    &log,
+		Namespace:    *namespace,
+		Config:       cfg,
+		Debug:        *debug,
+		Logger:       log,
+		ProviderName: serviceName,
+		ListWatcher: controller.ListWatcherConfiguration{
+			LabelSelector: ptr.To(labelselector.String()),
+		},
 	})
-	ctrl.SetExternalClient(handler)
+	controller.SetExternalClient(handler)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), []os.Signal{
 		os.Interrupt,
@@ -151,8 +149,8 @@ func main() {
 	}...)
 	defer cancel()
 
-	err = ctrl.Run(ctx, *workers)
+	err = controller.Run(ctx, *workers)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Running controller.")
+		log.Debug("Running controller.", "error", err)
 	}
 }

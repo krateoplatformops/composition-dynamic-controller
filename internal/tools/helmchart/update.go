@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 

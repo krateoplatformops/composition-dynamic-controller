@@ -11,7 +11,7 @@ import (
 	helmstorage "helm.sh/helm/v3/pkg/storage"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
