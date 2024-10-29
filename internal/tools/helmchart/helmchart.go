@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
-	unstructuredtools "github.com/krateoplatformops/controller-generic/pkg/tools/unstructured"
+	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
-	"github.com/krateoplatformops/controller-generic/pkg/controller/objectref"
-	"github.com/krateoplatformops/controller-generic/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

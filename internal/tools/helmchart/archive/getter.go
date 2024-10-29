@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/controller-generic/pkg/listwatcher"
-	"github.com/krateoplatformops/controller-generic/pkg/logging"
-	unstructuredtools "github.com/krateoplatformops/controller-generic/pkg/tools/unstructured"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/listwatcher"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"

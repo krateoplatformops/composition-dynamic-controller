@@ -12,19 +12,24 @@ import (
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/support"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
-	genctrl "github.com/krateoplatformops/controller-generic"
-	"github.com/krateoplatformops/controller-generic/pkg/eventrecorder"
-	"github.com/krateoplatformops/controller-generic/pkg/logging"
+	genctrl "github.com/krateoplatformops/unstructured-runtime"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/eventrecorder"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
-	serviceName = "composition-dynamic-controller"
+	serviceName             = "composition-dynamic-controller"
+	compositionVersionLabel = "krateo.io/composition-version"
 )
 
 var (
@@ -59,7 +64,7 @@ func main() {
 	flag.Parse()
 
 	zl := zap.New(zap.UseDevMode(*debug))
-	log := logging.NewLogrLogger(zl.WithName("composition-dynamic-controller"))
+	log := logging.NewLogrLogger(zl.WithName(serviceName))
 	// Kubernetes configuration
 	var cfg *rest.Config
 	var err error
@@ -107,6 +112,13 @@ func main() {
 		WithValues("resource", *resourceName).
 		Info("Starting composition dynamic controller.")
 
+	// Create a label requirement for the composition version
+	labelreq, err := labels.NewRequirement(compositionVersionLabel, selection.Equals, []string{*resourceVersion})
+	if err != nil {
+		log.Debug("Creating label requirement.", "error", err)
+	}
+	labelselector := labels.NewSelector().Add(*labelreq)
+
 	controller := genctrl.New(genctrl.Options{
 		Discovery:      discovery,
 		Client:         dyn,
@@ -120,7 +132,10 @@ func main() {
 		Config:       cfg,
 		Debug:        *debug,
 		Logger:       log,
-		ProviderName: "test",
+		ProviderName: serviceName,
+		ListWatcher: controller.ListWatcherConfiguration{
+			LabelSelector: ptr.To(labelselector.String()),
+		},
 	})
 	controller.SetExternalClient(handler)
 

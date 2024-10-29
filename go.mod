@@ -9,17 +9,17 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/golang/mock v1.6.0
-	github.com/krateoplatformops/controller-generic v0.0.0-00010101000000-000000000000
+	github.com/krateoplatformops/unstructured-runtime v0.0.1
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.5
-	github.com/stoewer/go-strcase v1.3.0
 	github.com/stretchr/testify v1.9.0
 	helm.sh/helm/v3 v3.15.4
 	k8s.io/apiextensions-apiserver v0.31.0
 	k8s.io/apimachinery v0.31.1
 	k8s.io/cli-runtime v0.30.3
 	k8s.io/client-go v0.31.1
+	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
 	sigs.k8s.io/controller-runtime v0.19.0
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 	sigs.k8s.io/yaml v1.4.0
@@ -119,6 +119,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/cobra v1.8.1 // indirect
+	github.com/twmb/murmur3 v1.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
@@ -153,11 +154,10 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/kubectl v0.30.3 // indirect
-	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
 	oras.land/oras-go v1.2.5 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.16.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
 
-replace github.com/krateoplatformops/controller-generic => /Users/matteogastaldello/Documents/controller-generic
+// replace github.com/krateoplatformops/unstructured-runtime => /Users/matteogastaldello/Documents/unstructured-runtime

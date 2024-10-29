@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/krateoplatformops/controller-generic/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 )
 
 type GetOptions struct {

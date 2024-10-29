@@ -1,7 +1,7 @@
 package repo
 
 import (
-	"github.com/krateoplatformops/controller-generic/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"sigs.k8s.io/yaml"
 )
 

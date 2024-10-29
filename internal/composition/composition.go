@@ -9,10 +9,11 @@ import (
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
-	"github.com/krateoplatformops/controller-generic/pkg/controller"
-	"github.com/krateoplatformops/controller-generic/pkg/controller/objectref"
-	"github.com/krateoplatformops/controller-generic/pkg/logging"
-	"github.com/krateoplatformops/controller-generic/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -21,10 +22,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools"
+	unstools "github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 
-	unstructuredtools "github.com/krateoplatformops/controller-generic/pkg/tools/unstructured"
-	"github.com/krateoplatformops/controller-generic/pkg/tools/unstructured/condition"
+	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
 )
 
 var (
@@ -33,11 +34,12 @@ var (
 )
 
 const (
-	reasonCreated  = "CompositionCreated"
-	reasonDeleted  = "CompositionDeleted"
-	reasonReady    = "CompositionReady"
-	reasonNotReady = "CompositionNotReady"
-	reasonUpdated  = "CompositionUpdated"
+	reasonCreated   = "CompositionCreated"
+	reasonDeleted   = "CompositionDeleted"
+	reasonReady     = "CompositionReady"
+	reasonNotReady  = "CompositionNotReady"
+	reasonUpdated   = "CompositionUpdated"
+	reasonInstalled = "CompositionInstalled"
 )
 
 const (
@@ -146,7 +148,6 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
-		// log.Err(err).Msg("Rendering helm chart template")
 		log.Debug("Rendering helm chart template", "error", err)
 		return false, fmt.Errorf("rendering helm chart template: %w", err)
 	}
@@ -156,76 +157,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	log.Debug("Checking composition resources", "package", pkg.URL)
 
-	opts := helmchart.CheckResourceOptions{
-		DynamicClient:   h.dynamicClient,
-		DiscoveryClient: h.discoveryClient,
-	}
-
-	managed, err := populateManagedResources(h.discoveryClient, all)
-	if err != nil {
-		log.Debug("Populating managed resources", "error", err)
-		return false, err
-	}
-
-	resourcesAvailable := true
-	resourcesExist := true
-	for _, el := range all {
-		log.WithValues("package", pkg.URL).Debug("Checking for resource", "resource", el.String())
-
-		ref, err := helmchart.CheckResource(ctx, el, opts)
-		if err != nil {
-			if ref == nil {
-				log.WithValues("package", pkg.URL).
-					Debug("Composition not ready", "error", err)
-
-				h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
-				setManagedResources(mg, managed)
-
-				mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-					DiscoveryClient: h.discoveryClient,
-					DynamicClient:   h.dynamicClient,
-				})
-				if err != nil {
-					log.Debug("Updating cr status with condition", "error", err, "condition", condition.Unavailable())
-					return false, err
-				}
-
-				resourcesExist = false
-				continue
-			}
-			log.Debug("Composition not ready", "package", pkg.URL, "error", err)
-
-			h.eventRecorder.Eventf(mg, eventTypeWarning, reasonNotReady, "Status is Not Ready for composition: %s", mg.GetName())
-			_ = unstructuredtools.SetFailedObjectRef(mg, ref)
-			_ = unstructuredtools.SetCondition(mg, condition.Unavailable())
-			setManagedResources(mg, managed)
-
-			mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-				DiscoveryClient: h.discoveryClient,
-				DynamicClient:   h.dynamicClient,
-			})
-			if err != nil {
-				log.Debug("Updating cr status with condition", "error", err, "condition", condition.Unavailable())
-				return true, err
-			}
-			resourcesAvailable = false
-		}
-	}
-
-	if !resourcesExist {
-		return false, nil
-	}
-
-	if !resourcesAvailable {
-		return true, fmt.Errorf("composition not ready")
-	}
-
-	log.Debug("Composition ready", "package", pkg.URL)
-
+	managed := populateManagedResources(all)
 	setManagedResources(mg, managed)
+
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
 	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
-	_ = unstructuredtools.SetCondition(mg, condition.Available())
+	_ = unstructuredtools.SetCondition(mg, condition.Installed())
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
@@ -233,18 +170,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
 	}
+	log.Debug("Composition Installed", "package", pkg.URL)
 
-	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonReady, "Status is Ready for composition: %s", mg.GetName())
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonInstalled, "Status is Installed for composition: %s", mg.GetName())
 	return true, nil
 }
 
 func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) error {
-	// log := h.logger.With().
-	// 	Str("op", "Create").
-	// 	Str("apiVersion", mg.GetAPIVersion()).
-	// 	Str("kind", mg.GetKind()).
-	// 	Str("name", mg.GetName()).
-	// 	Str("namespace", mg.GetNamespace()).Logger()
 	log := h.logger.WithValues("op", "Create").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
@@ -345,12 +277,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	managed, err := populateManagedResources(h.discoveryClient, all)
-	if err != nil {
-		log.Debug("Populating managed resources", "error", err)
-		return fmt.Errorf("populating managed resources: %w", err)
-	}
-
+	managed := populateManagedResources(all)
 	setManagedResources(mg, managed)
 
 	unstructuredtools.SetCondition(mg, condition.Creating())
@@ -458,11 +385,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	managed, err := populateManagedResources(h.discoveryClient, all)
-	if err != nil {
-		log.Debug("Populating managed resources", "error", err)
-		return fmt.Errorf("populating managed resources: %w", err)
-	}
+	managed := populateManagedResources(all)
 
 	setManagedResources(mg, managed)
 
@@ -582,13 +505,10 @@ func setManagedResources(mg *unstructured.Unstructured, managed []interface{}) {
 	mg.Object["status"] = mapstatus
 }
 
-func populateManagedResources(discovery discovery.DiscoveryInterface, resources []objectref.ObjectRef) ([]interface{}, error) {
+func populateManagedResources(resources []objectref.ObjectRef) []interface{} {
 	var managed []interface{}
 	for _, ref := range resources {
-		gvr, err := tools.GVKtoGVR(discovery, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
-		if err != nil {
-			return nil, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
-		}
+		gvr := unstools.InferGVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
 		managed = append(managed, ManagedResource{
 			APIVersion: ref.APIVersion,
 			Resource:   gvr.Resource,
@@ -597,5 +517,5 @@ func populateManagedResources(discovery discovery.DiscoveryInterface, resources 
 		})
 	}
 
-	return managed, nil
+	return managed
 }
