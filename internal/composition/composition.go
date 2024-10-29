@@ -170,9 +170,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
 	}
-	log.Debug("Composition Installed", "package", pkg.URL)
-
-	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonInstalled, "Status is Installed for composition: %s", mg.GetName())
+	log.Debug("Composition Observed - installed", "package", pkg.URL)
 	return true, nil
 }
 
