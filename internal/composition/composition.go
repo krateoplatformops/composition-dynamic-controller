@@ -407,7 +407,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	setManagedResources(mg, managed)
 
 	log.Debug("Composition values updated.", "package", pkg.URL)
-	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Updated composition: %s", mg.GetName())
+	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonUpdated, "Updated composition: %s", mg.GetName())
 
 	cond := condition.Creating()
 	cond.Message = "Composition values updated."
