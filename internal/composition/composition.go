@@ -10,13 +10,11 @@ import (
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -160,6 +158,16 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		log.Debug("Populating managed resources", "error", err)
 		return true, err
 	}
+	ok, err := checkManaged(mg, managed)
+	if err != nil {
+		log.Debug("Checking managed resources", "error", err)
+		return true, err
+	}
+	if !ok {
+		log.Debug("Composition resources mismatch")
+		return false, nil
+	}
+
 	setManagedResources(mg, managed)
 
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
@@ -171,7 +179,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	})
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
+		return true, err
 	}
+
 	log.Debug("Composition Observed - installed", "package", pkg.URL)
 	return true, nil
 }
@@ -411,12 +421,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 }
 
 func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
-	// h.logger.Debug().Str("apiVersion", mg.GetAPIVersion()).
-	// Str("kind", mg.GetKind()).
-	// Str("name", mg.GetName()).
-	// Str("namespace", mg.GetNamespace()).
-	// Str("package", pkg.URL).
-
 	log := h.logger.WithValues("op", "Delete").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
@@ -426,12 +430,6 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
-
-	// mg := unstructured.Unstructured{}
-	// mg.SetAPIVersion(ref.APIVersion)
-	// mg.SetKind(ref.Kind)
-	// mg.SetName(ref.Name)
-	// mg.SetNamespace(ref.Namespace)
 
 	hc, err := h.helmClientForResource(mg, nil)
 	if err != nil {
@@ -493,54 +491,4 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 	}
 
 	return helmclient.New(opts)
-}
-
-type ManagedResource struct {
-	APIVersion string `json:"apiVersion"`
-	Resource   string `json:"resource"`
-	Name       string `json:"name"`
-	Namespace  string `json:"namespace"`
-}
-
-func setManagedResources(mg *unstructured.Unstructured, managed []interface{}) {
-	status := mg.Object["status"]
-	if status == nil {
-		status = map[string]interface{}{}
-	}
-	mapstatus := status.(map[string]interface{})
-	mapstatus["managed"] = managed
-	mg.Object["status"] = mapstatus
-}
-
-// func populateManagedResources(resources []objectref.ObjectRef) []interface{} {
-// 	var managed []interface{}
-// 	for _, ref := range resources {
-// 		gvr := unstools.InferGVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
-// 		managed = append(managed, ManagedResource{
-// 			APIVersion: ref.APIVersion,
-// 			Resource:   gvr.Resource,
-// 			Name:       ref.Name,
-// 			Namespace:  ref.Namespace,
-// 		})
-// 	}
-
-// 	return managed
-// }
-
-func populateManagedResources(discovery discovery.DiscoveryInterface, resources []objectref.ObjectRef) ([]interface{}, error) {
-	var managed []interface{}
-	for _, ref := range resources {
-		gvr, err := tools.GVKtoGVR(discovery, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
-		if err != nil {
-			return nil, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
-		}
-		managed = append(managed, ManagedResource{
-			APIVersion: ref.APIVersion,
-			Resource:   gvr.Resource,
-			Name:       ref.Name,
-			Namespace:  ref.Namespace,
-		})
-	}
-
-	return managed, nil
 }
