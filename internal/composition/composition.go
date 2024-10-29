@@ -22,8 +22,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 
-	unstools "github.com/krateoplatformops/unstructured-runtime/pkg/tools"
-
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured/condition"
 )
@@ -157,7 +155,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 
 	log.Debug("Checking composition resources", "package", pkg.URL)
 
-	managed := populateManagedResources(all)
+	managed, err := populateManagedResources(h.discoveryClient, all)
+	if err != nil {
+		log.Debug("Populating managed resources", "error", err)
+		return true, err
+	}
 	setManagedResources(mg, managed)
 
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
@@ -170,9 +172,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
 	}
-	log.Debug("Composition Installed", "package", pkg.URL)
-
-	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonInstalled, "Status is Installed for composition: %s", mg.GetName())
+	log.Debug("Composition Observed - installed", "package", pkg.URL)
 	return true, nil
 }
 
@@ -277,7 +277,11 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	managed := populateManagedResources(all)
+	managed, err := populateManagedResources(h.discoveryClient, all)
+	if err != nil {
+		log.Debug("Populating managed resources", "error", err)
+		return err
+	}
 	setManagedResources(mg, managed)
 
 	unstructuredtools.SetCondition(mg, condition.Creating())
@@ -385,8 +389,11 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	managed := populateManagedResources(all)
-
+	managed, err := populateManagedResources(h.discoveryClient, all)
+	if err != nil {
+		log.Debug("Populating managed resources", "error", err)
+		return err
+	}
 	setManagedResources(mg, managed)
 
 	log.Debug("Composition values updated.", "package", pkg.URL)
@@ -505,10 +512,28 @@ func setManagedResources(mg *unstructured.Unstructured, managed []interface{}) {
 	mg.Object["status"] = mapstatus
 }
 
-func populateManagedResources(resources []objectref.ObjectRef) []interface{} {
+// func populateManagedResources(resources []objectref.ObjectRef) []interface{} {
+// 	var managed []interface{}
+// 	for _, ref := range resources {
+// 		gvr := unstools.InferGVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+// 		managed = append(managed, ManagedResource{
+// 			APIVersion: ref.APIVersion,
+// 			Resource:   gvr.Resource,
+// 			Name:       ref.Name,
+// 			Namespace:  ref.Namespace,
+// 		})
+// 	}
+
+// 	return managed
+// }
+
+func populateManagedResources(discovery discovery.DiscoveryInterface, resources []objectref.ObjectRef) ([]interface{}, error) {
 	var managed []interface{}
 	for _, ref := range resources {
-		gvr := unstools.InferGVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+		gvr, err := tools.GVKtoGVR(discovery, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+		if err != nil {
+			return nil, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
+		}
 		managed = append(managed, ManagedResource{
 			APIVersion: ref.APIVersion,
 			Resource:   gvr.Resource,
@@ -517,5 +542,5 @@ func populateManagedResources(resources []objectref.ObjectRef) []interface{} {
 		})
 	}
 
-	return managed
+	return managed, nil
 }
