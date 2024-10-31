@@ -151,7 +151,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		return false, nil
 	}
 
-	log.Debug("Checking composition resources", "package", pkg.URL)
+	log.Debug("Setting managed array", "package", pkg.URL)
 
 	managed, err := populateManagedResources(h.discoveryClient, all)
 	if err != nil {
@@ -194,6 +194,14 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("namespace", mg.GetNamespace())
 
 	meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
+	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
+		DiscoveryClient: h.discoveryClient,
+		DynamicClient:   h.dynamicClient,
+	})
+	if err != nil {
+		log.Debug("Removing Create pending annotation", "error", err)
+		return err
+	}
 
 	if meta.ExternalCreateIncomplete(mg) {
 		log.Debug(errCreateIncomplete)
@@ -209,6 +217,14 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	meta.SetReleaseName(mg, mg.GetName())
+	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
+		DiscoveryClient: h.discoveryClient,
+		DynamicClient:   h.dynamicClient,
+	})
+	if err != nil {
+		log.Debug("Updating composition", "error", err)
+		return err
+	}
 
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")

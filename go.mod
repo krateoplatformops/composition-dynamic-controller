@@ -9,7 +9,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/golang/mock v1.6.0
-	github.com/krateoplatformops/unstructured-runtime v0.0.1
+	github.com/krateoplatformops/unstructured-runtime v0.0.2
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.5
@@ -159,5 +159,3 @@ require (
 	sigs.k8s.io/kustomize/api v0.16.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
-
-// replace github.com/krateoplatformops/unstructured-runtime => /Users/matteogastaldello/Documents/unstructured-runtime
