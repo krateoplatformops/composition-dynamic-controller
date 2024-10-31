@@ -2,6 +2,7 @@ package elementsmatch
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
@@ -92,7 +93,25 @@ func ElementsMatch(listA, listB interface{}) (ok bool, err error) {
 			if visited[j] {
 				continue
 			}
-			if ObjectsAreEqual(bValue.Index(j).Interface(), element) {
+			var e1, e2 interface{}
+			b1, err := json.Marshal(element)
+			if err != nil {
+				return false, err
+			}
+			err = json.Unmarshal(b1, &e1)
+			if err != nil {
+				return false, err
+			}
+			b2, err := json.Marshal(bValue.Index(j).Interface())
+			if err != nil {
+				return false, err
+			}
+			err = json.Unmarshal(b2, &e2)
+			if err != nil {
+				return false, err
+			}
+
+			if ObjectsAreEqual(e1, e2) {
 				visited[j] = true
 				found = true
 				break
