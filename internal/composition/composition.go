@@ -73,7 +73,7 @@ type handler struct {
 	eventRecorder     record.EventRecorder
 }
 
-func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (bool, error) {
+func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
 	log := h.logger.WithValues("op", "Observe").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
@@ -83,30 +83,33 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	meta.SetReleaseName(mg, mg.GetName())
 
 	if h.packageInfoGetter == nil {
-		return false, fmt.Errorf("helm chart package info getter must be specified")
+		return controller.ExternalObservation{}, fmt.Errorf("helm chart package info getter must be specified")
 	}
 
 	pkg, err := h.packageInfoGetter.Get(mg)
 	if err != nil {
 		log.Debug("Getting package info", "error", err)
-		return false, err
+		return controller.ExternalObservation{}, err
 	}
 
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
 		log.Debug("Getting helm client", "error", err)
-		return false, err
+		return controller.ExternalObservation{}, err
 	}
 
 	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
 	if err != nil {
 		if !errors.Is(err, errReleaseNotFound) {
-			return false, err
+			return controller.ExternalObservation{}, err
 		}
 	}
 	if rel == nil {
 		log.Debug("Composition not found.")
-		return false, nil
+		return controller.ExternalObservation{
+			ResourceExists:   false,
+			ResourceUpToDate: false,
+		}, nil
 	}
 
 	if meta.ExternalCreateIncomplete(mg) {
@@ -118,14 +121,17 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 		})
 		if err != nil {
 			log.Debug("Setting meta create succeeded annotation.", "error", err)
-			return false, err
+			return controller.ExternalObservation{}, err
 		}
 	}
 
 	// Check if the package version in the CompositionDefinition is the same as the installed chart version.
 	if pkg.Version != rel.Chart.Metadata.Version {
 		log.Debug("Composition package version mismatch.")
-		return false, nil
+		return controller.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: false,
+		}, nil
 	}
 
 	renderOpts := helmchart.RenderTemplateOptions{
@@ -145,10 +151,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
 		log.Debug("Rendering helm chart template", "error", err)
-		return false, fmt.Errorf("rendering helm chart template: %w", err)
+		return controller.ExternalObservation{}, fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
-		return false, nil
+		return controller.ExternalObservation{}, nil
 	}
 
 	log.Debug("Setting managed array", "package", pkg.URL)
@@ -156,34 +162,40 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (b
 	managed, err := populateManagedResources(h.discoveryClient, all)
 	if err != nil {
 		log.Debug("Populating managed resources", "error", err)
-		return true, err
+		return controller.ExternalObservation{}, err
 	}
 	ok, err := checkManaged(mg, managed)
 	if err != nil {
 		log.Debug("Checking managed resources", "error", err)
-		return true, err
+		return controller.ExternalObservation{}, err
 	}
 	if !ok {
 		log.Debug("Composition resources mismatch")
-		return false, nil
+		return controller.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: false,
+		}, nil
 	}
 
 	setManagedResources(mg, managed)
 
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
 	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
-	_ = unstructuredtools.SetCondition(mg, condition.Installed())
+	_ = unstructuredtools.SetCondition(mg, condition.Available())
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		DiscoveryClient: h.discoveryClient,
 		DynamicClient:   h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
-		return true, err
+		return controller.ExternalObservation{}, err
 	}
 
 	log.Debug("Composition Observed - installed", "package", pkg.URL)
-	return true, nil
+	return controller.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
 }
 
 func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) error {
