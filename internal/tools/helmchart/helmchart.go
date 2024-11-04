@@ -6,17 +6,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +81,7 @@ type RenderTemplateOptions struct {
 	Resource       *unstructured.Unstructured
 	Repo           string
 	Credentials    *Credentials
+	Pluralizer     pluralizer.Pluralizer
 }
 
 func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectref.ObjectRef, error) {
@@ -103,12 +103,39 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectre
 		chartSpec.Password = opts.Credentials.Password
 	}
 
-	tpl, err := opts.HelmClient.TemplateChart(&chartSpec, nil)
+	rel, err := opts.HelmClient.TemplateChartRaw(&chartSpec, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	all, err := GetResourcesRefFromRelease(rel, opts.Resource.GetNamespace())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get resources from release: %w", err)
+	}
+
+	return all, nil
+}
+
+func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) ([]objectref.ObjectRef, error) {
+	out := new(bytes.Buffer)
+
+	// We ignore a potential error here because, when the --debug flag was specified,
+	// we always want to print the YAML, even if it is not valid. The error is still returned afterwards.
+	if rel != nil {
+		var manifests bytes.Buffer
+		fmt.Fprintln(&manifests, strings.TrimSpace(rel.Manifest))
+
+		for _, m := range rel.Hooks {
+			fmt.Fprintf(&manifests, "---\n# Source: %s\n%s\n", m.Path, m.Manifest)
+		}
+
+		// if we have a list of files to render, then check that each of the
+		// provided files exists in the chart.
+		fmt.Fprintf(out, "%s", manifests.String())
+	}
+
 	all := []objectref.ObjectRef{}
+	tpl := out.Bytes()
 
 	for _, spec := range strings.Split(string(tpl), "---") {
 		if len(spec) == 0 {
@@ -118,7 +145,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectre
 		decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader([]byte(spec)), 100)
 
 		var rawObj runtime.RawExtension
-		if err = decoder.Decode(&rawObj); err != nil {
+		if err := decoder.Decode(&rawObj); err != nil {
 			return all, err
 		}
 		if rawObj.Raw == nil {
@@ -137,7 +164,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectre
 
 		unstructuredObj := &unstructured.Unstructured{Object: unstructuredMap}
 		if unstructuredObj.GetNamespace() == "" {
-			unstructuredObj.SetNamespace(opts.Resource.GetNamespace())
+			unstructuredObj.SetNamespace(defaultNamespace)
 		}
 
 		_, ok, err := unstructured.NestedString(unstructuredMap, "metadata", "annotations", "helm.sh/hook")
@@ -158,12 +185,13 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectre
 }
 
 type CheckResourceOptions struct {
-	DynamicClient   dynamic.Interface
-	DiscoveryClient discovery.DiscoveryInterface
+	DynamicClient dynamic.Interface
+	Pluralizer    pluralizer.Pluralizer
+	// DiscoveryClient discovery.DiscoveryInterface
 }
 
 func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResourceOptions) (*objectref.ObjectRef, error) {
-	gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+	gvr, err := opts.Pluralizer.GVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
 	if err != nil {
 		return nil, err
 	}

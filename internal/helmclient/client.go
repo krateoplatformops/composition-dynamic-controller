@@ -671,6 +671,79 @@ func (c *HelmClient) TemplateChart(spec *ChartSpec, options *HelmTemplateOptions
 	return out.Bytes(), err
 }
 
+// TemplateChartRaw returns a rendered version of the provided ChartSpec 'spec' by performing a "dry-run" install.
+func (c *HelmClient) TemplateChartRaw(spec *ChartSpec, options *HelmTemplateOptions) (*release.Release, error) {
+	client := action.NewInstall(c.ActionConfig)
+	mergeInstallOptions(spec, client)
+
+	client.DryRun = true
+	client.ReleaseName = spec.ReleaseName
+	client.Replace = true // Skip the name check
+	client.ClientOnly = false
+	client.IncludeCRDs = true
+	client.DryRunOption = "server"
+
+	if options != nil {
+		client.KubeVersion = options.KubeVersion
+		client.APIVersions = options.APIVersions
+	}
+
+	// NameAndChart returns either the TemplateName if set,
+	// the ReleaseName if set or the generatedName as the first return value.
+	releaseName, _, err := client.NameAndChart([]string{spec.ReleaseName})
+	if err != nil {
+		return nil, err
+	}
+	client.ReleaseName = releaseName
+
+	if client.Version == "" {
+		client.Version = ">0.0.0-0"
+	}
+
+	var creds *Credentials
+
+	if spec.Username != "" && spec.Password != "" {
+		creds = &Credentials{
+			Username: spec.Username,
+			Password: spec.Password,
+		}
+	}
+
+	helmChart, chartPath, err := c.GetChartV2(&ChartInfo{
+		Url:                   spec.ChartName,
+		Version:               spec.Version,
+		Repo:                  spec.Repo,
+		InsecureSkipVerifyTLS: spec.InsecureSkipTLSverify,
+		Credentials:           creds,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if helmChart.Metadata.Type != "" && helmChart.Metadata.Type != "application" {
+		return nil, fmt.Errorf(
+			"chart %q has an unsupported type and is not installable: %q",
+			helmChart.Metadata.Name,
+			helmChart.Metadata.Type,
+		)
+	}
+
+	helmChart, err = updateDependencies(helmChart, &client.ChartPathOptions, chartPath, c, client.DependencyUpdate, spec)
+	if err != nil {
+		return nil, err
+	}
+
+	p := getter.All(c.Settings)
+	values, err := spec.GetValuesMap(p)
+	if err != nil {
+		return nil, err
+	}
+
+	rel, err := client.Run(helmChart, values)
+
+	return rel, err
+}
+
 // LintChart fetches a chart using the provided ChartSpec 'spec' and lints it's values.
 func (c *HelmClient) LintChart(spec *ChartSpec) error {
 	_, chartPath, err := c.GetChartV2(&ChartInfo{
