@@ -5,10 +5,9 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/elementsmatch"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/objectref"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
 )
 
 type ManagedResource struct {
@@ -39,10 +38,10 @@ func checkManaged(mg *unstructured.Unstructured, managed []interface{}) (bool, e
 	return elementsmatch.ElementsMatch(managedStatus, managed)
 }
 
-func populateManagedResources(discovery discovery.DiscoveryInterface, resources []objectref.ObjectRef) ([]interface{}, error) {
+func populateManagedResources(pluralizer pluralizer.Pluralizer, resources []objectref.ObjectRef) ([]interface{}, error) {
 	var managed []interface{}
 	for _, ref := range resources {
-		gvr, err := tools.GVKtoGVR(discovery, schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
+		gvr, err := pluralizer.GVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
 		if err != nil {
 			return nil, fmt.Errorf("getting GVR for %s: %w", ref.String(), err)
 		}

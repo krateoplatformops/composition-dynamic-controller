@@ -26,6 +26,7 @@ type Client interface {
 	UninstallRelease(spec *ChartSpec) error
 	UninstallReleaseByName(name string) error
 	TemplateChart(spec *ChartSpec, options *HelmTemplateOptions) ([]byte, error)
+	TemplateChartRaw(spec *ChartSpec, options *HelmTemplateOptions) (*release.Release, error)
 	LintChart(spec *ChartSpec) error
 	SetDebugLog(debugLog action.DebugLog)
 	ListReleaseHistory(name string, max int) ([]*release.Release, error)

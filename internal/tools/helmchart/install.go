@@ -6,7 +6,6 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
-	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -35,7 +34,7 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 		ChartName:       opts.ChartName,
 		CreateNamespace: true,
 		UpgradeCRDs:     true,
-		Wait:            false,
+		Wait:            true,
 	}
 	if opts.Credentials != nil {
 		chartSpec.Username = opts.Credentials.Username
@@ -51,10 +50,7 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	}
 	uid := opts.Resource.GetUID()
 
-	if opts.DiscoveryClient == nil {
-		return nil, 0, fmt.Errorf("discovery client is required")
-	}
-	gvr, err := tools.GVKtoGVR(opts.DiscoveryClient, opts.Resource.GetObjectKind().GroupVersionKind())
+	gvr, err := opts.Pluralizer.GVKtoGVR(opts.Resource.GetObjectKind().GroupVersionKind())
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get GVR: %w", err)
 	}
@@ -74,7 +70,6 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 
 	claimGen := opts.Resource.GetGeneration()
 	chartSpec.ValuesYaml = string(dat)
-
 	helmOpts := &helmclient.GenericHelmOptions{
 		PostRenderer: &labelsPostRender{
 			UID:                  uid,

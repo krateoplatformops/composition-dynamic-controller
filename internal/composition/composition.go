@@ -12,6 +12,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -45,21 +46,12 @@ const (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event record.EventRecorder) controller.ExternalClient {
-	dyn, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		log.Debug("Creating dynamic client.", "error", err)
-	}
-
-	dis, err := discovery.NewDiscoveryClientForConfig(cfg)
-	if err != nil {
-		log.Debug("Creating discovery client.", "error", err)
-	}
-
+func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event record.EventRecorder, dyn dynamic.Interface, disc discovery.CachedDiscoveryInterface, pluralizer pluralizer.Pluralizer) controller.ExternalClient {
 	return &handler{
+		pluralizer:        pluralizer,
 		logger:            log,
 		dynamicClient:     dyn,
-		discoveryClient:   dis,
+		discoveryClient:   disc,
 		packageInfoGetter: pig,
 		eventRecorder:     event,
 	}
@@ -67,8 +59,9 @@ func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event 
 
 type handler struct {
 	logger            logging.Logger
+	pluralizer        pluralizer.Pluralizer
 	dynamicClient     dynamic.Interface
-	discoveryClient   discovery.DiscoveryInterface
+	discoveryClient   discovery.CachedDiscoveryInterface
 	packageInfoGetter archive.Getter
 	eventRecorder     record.EventRecorder
 }
@@ -116,8 +109,8 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
 		meta.SetExternalCreateSucceeded(mg, time.Now())
 		mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
+			Pluralizer:    h.pluralizer,
+			DynamicClient: h.dynamicClient,
 		})
 		if err != nil {
 			log.Debug("Setting meta create succeeded annotation.", "error", err)
@@ -159,7 +152,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	log.Debug("Setting managed array", "package", pkg.URL)
 
-	managed, err := populateManagedResources(h.discoveryClient, all)
+	managed, err := populateManagedResources(h.pluralizer, all)
 	if err != nil {
 		log.Debug("Populating managed resources", "error", err)
 		return controller.ExternalObservation{}, err
@@ -183,8 +176,9 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
 	_ = unstructuredtools.SetCondition(mg, condition.Available())
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		// DiscoveryClient: h.discoveryClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
@@ -207,8 +201,8 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	meta.RemoveAnnotations(mg, meta.AnnotationKeyExternalCreatePending)
 	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Removing Create pending annotation", "error", err)
@@ -222,16 +216,16 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 			return err
 		}
 		_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
+			Pluralizer:    h.pluralizer,
+			DynamicClient: h.dynamicClient,
 		})
 		return err
 	}
 
 	meta.SetReleaseName(mg, mg.GetName())
 	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Updating composition", "error", err)
@@ -256,8 +250,8 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	opts := helmchart.InstallOptions{
 		CheckResourceOptions: helmchart.CheckResourceOptions{
-			DynamicClient:   h.dynamicClient,
-			DiscoveryClient: h.discoveryClient,
+			DynamicClient: h.dynamicClient,
+			Pluralizer:    h.pluralizer,
 		},
 		HelmClient: hc,
 		ChartName:  pkg.URL,
@@ -272,61 +266,49 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		}
 	}
 
-	_, _, err = helmchart.Install(ctx, opts)
+	rel, _, err := helmchart.Install(ctx, opts)
 	if err != nil {
 		log.Debug("Installing helm chart", "package", pkg.URL, "error", err)
 		meta.SetExternalCreateFailed(mg, time.Now())
 
-		_, err = tools.Update(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
+		tools.Update(ctx, mg, tools.UpdateOptions{
+			Pluralizer:    h.pluralizer,
+			DynamicClient: h.dynamicClient,
 		})
 
 		return fmt.Errorf("installing helm chart: %w", err)
 	}
-
 	log.Debug("Installing composition package", "package", pkg.URL)
 
 	meta.SetExternalCreatePending(mg, time.Now())
 
 	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Setting meta create pending annotation.", "error", err)
 		return err
 	}
 
-	// Set the status to creating and set the managed resources
-	renderOpts := helmchart.RenderTemplateOptions{
-		HelmClient:     hc,
-		Resource:       mg,
-		PackageUrl:     pkg.URL,
-		PackageVersion: pkg.Version,
-		Repo:           pkg.Repo,
-	}
-	all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace())
 	if err != nil {
-		log.Debug("Rendering helm chart template", "error", err)
-		return fmt.Errorf("rendering helm chart template: %w", err)
-	}
-	if len(all) == 0 {
-		return nil
+		log.Debug("Getting resources from release", "error", err)
+		return fmt.Errorf("getting resources from release: %w", err)
 	}
 
-	managed, err := populateManagedResources(h.discoveryClient, all)
+	managed, err := populateManagedResources(h.pluralizer, all)
 	if err != nil {
 		log.Debug("Populating managed resources", "error", err)
 		return err
 	}
 	setManagedResources(mg, managed)
 
-	unstructuredtools.SetCondition(mg, condition.Creating())
+	unstructuredtools.SetCondition(mg, condition.Available())
 	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Created composition: %s", mg.GetName())
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	return err
 }
@@ -348,16 +330,16 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		_ = unstructuredtools.SetCondition(mg, condition.Creating())
 
 		_, err := tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-			DiscoveryClient: h.discoveryClient,
-			DynamicClient:   h.dynamicClient,
+			Pluralizer:    h.pluralizer,
+			DynamicClient: h.dynamicClient,
 		})
 		return err
 	}
 
 	meta.SetExternalCreatePending(mg, time.Now())
 	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Setting meta create pending annotation.", "error", err)
@@ -402,8 +384,8 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	meta.SetExternalCreatePending(mg, time.Now())
 	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	if err != nil {
 		log.Debug("Setting meta create pending annotation.", "error", err)
@@ -427,7 +409,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	managed, err := populateManagedResources(h.discoveryClient, all)
+	managed, err := populateManagedResources(h.pluralizer, all)
 	if err != nil {
 		log.Debug("Populating managed resources", "error", err)
 		return err
@@ -442,8 +424,8 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	unstructuredtools.SetCondition(mg, cond)
 
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		DiscoveryClient: h.discoveryClient,
-		DynamicClient:   h.dynamicClient,
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
 	})
 	return err
 }

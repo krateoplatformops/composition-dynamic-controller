@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,10 +17,12 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/eventrecorder"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -55,6 +58,8 @@ func main() {
 		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
 	chart := flag.String("chart",
 		support.EnvString("COMPOSITION_CONTROLLER_CHART", ""), "chart")
+	urlplurals := flag.String("urlplurals",
+		support.EnvString("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -87,6 +92,8 @@ func main() {
 		log.Debug("Creating discovery client.", "error", err)
 	}
 
+	cachedDisc := memory.NewMemCacheClient(discovery)
+
 	rec, err := eventrecorder.Create(cfg)
 	if err != nil {
 		log.Debug("Creating event recorder.", "error", err)
@@ -101,8 +108,6 @@ func main() {
 			log.Debug("Creating chart url info getter.", "error", err)
 		}
 	}
-
-	handler := composition.NewHandler(cfg, log, pig, rec)
 
 	log.WithValues("build", Build).
 		WithValues("debug", *debug).
@@ -119,8 +124,11 @@ func main() {
 	}
 	labelselector := labels.NewSelector().Add(*labelreq)
 
+	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
+	handler := composition.NewHandler(cfg, log, pig, rec, dyn, cachedDisc, *pluralizer)
+
 	controller := genctrl.New(genctrl.Options{
-		Discovery:      discovery,
+		Discovery:      cachedDisc,
 		Client:         dyn,
 		ResyncInterval: *resyncInterval,
 		GVR: schema.GroupVersionResource{
@@ -136,6 +144,7 @@ func main() {
 		ListWatcher: controller.ListWatcherConfiguration{
 			LabelSelector: ptr.To(labelselector.String()),
 		},
+		Pluralizer: *pluralizer,
 	})
 	controller.SetExternalClient(handler)
 
