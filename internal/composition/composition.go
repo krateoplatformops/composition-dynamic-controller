@@ -336,16 +336,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	meta.SetExternalCreatePending(mg, time.Now())
-	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
-		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
-	})
-	if err != nil {
-		log.Debug("Setting meta create pending annotation.", "error", err)
-		return err
-	}
-
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
@@ -363,6 +353,10 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	opts := helmchart.UpdateOptions{
+		CheckResourceOptions: helmchart.CheckResourceOptions{
+			DynamicClient: h.dynamicClient,
+			Pluralizer:    h.pluralizer,
+		},
 		HelmClient: hc,
 		ChartName:  pkg.URL,
 		Resource:   mg,
@@ -394,6 +388,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 
 	// Update the composition values in the status.
 	renderOpts := helmchart.RenderTemplateOptions{
+		Pluralizer:     h.pluralizer,
 		HelmClient:     hc,
 		Resource:       mg,
 		PackageUrl:     pkg.URL,
