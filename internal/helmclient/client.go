@@ -700,21 +700,15 @@ func (c *HelmClient) TemplateChartRaw(spec *ChartSpec, options *HelmTemplateOpti
 		client.Version = ">0.0.0-0"
 	}
 
-	var creds *Credentials
-
-	if spec.Username != "" && spec.Password != "" {
-		creds = &Credentials{
-			Username: spec.Username,
-			Password: spec.Password,
-		}
-	}
-
 	helmChart, chartPath, err := c.GetChartV2(&ChartInfo{
 		Url:                   spec.ChartName,
 		Version:               spec.Version,
 		Repo:                  spec.Repo,
 		InsecureSkipVerifyTLS: spec.InsecureSkipTLSverify,
-		Credentials:           creds,
+		Credentials: &Credentials{
+			Username: spec.Username,
+			Password: spec.Password,
+		},
 	})
 	if err != nil {
 		return nil, err

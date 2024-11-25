@@ -30,6 +30,10 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 		CleanupOnFail:   true,
 		Install:         true,
 	}
+	if opts.Credentials != nil {
+		chartSpec.Username = opts.Credentials.Username
+		chartSpec.Password = opts.Credentials.Password
+	}
 
 	dat, err := ExtractValuesFromSpec(opts.Resource)
 	if err != nil {

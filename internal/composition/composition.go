@@ -400,6 +400,12 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		PackageVersion: pkg.Version,
 		Repo:           pkg.Repo,
 	}
+	if pkg.RegistryAuth != nil {
+		renderOpts.Credentials = &helmchart.Credentials{
+			Username: pkg.RegistryAuth.Username,
+			Password: pkg.RegistryAuth.Password,
+		}
+	}
 	all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
 		log.Debug("Rendering helm chart template", "error", err)
