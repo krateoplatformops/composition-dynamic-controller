@@ -84,10 +84,10 @@ type RenderTemplateOptions struct {
 	Pluralizer     pluralizer.Pluralizer
 }
 
-func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectref.ObjectRef, error) {
+func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) (*release.Release, []objectref.ObjectRef, error) {
 	dat, err := ExtractValuesFromSpec(opts.Resource)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chartSpec := helmclient.ChartSpec{
@@ -105,15 +105,15 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) ([]objectre
 
 	rel, err := opts.HelmClient.TemplateChartRaw(&chartSpec, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	all, err := GetResourcesRefFromRelease(rel, opts.Resource.GetNamespace())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get resources from release: %w", err)
+		return nil, nil, fmt.Errorf("failed to get resources from release: %w", err)
 	}
 
-	return all, nil
+	return rel, all, nil
 }
 
 func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) ([]objectref.ObjectRef, error) {
