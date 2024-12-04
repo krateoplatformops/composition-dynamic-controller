@@ -118,15 +118,6 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 
-	// Check if the package version in the CompositionDefinition is the same as the installed chart version.
-	if pkg.Version != rel.Chart.Metadata.Version {
-		log.Debug("Composition package version mismatch.")
-		return controller.ExternalObservation{
-			ResourceExists:   true,
-			ResourceUpToDate: false,
-		}, nil
-	}
-
 	renderOpts := helmchart.RenderTemplateOptions{
 		HelmClient:     hc,
 		Resource:       mg,
@@ -141,13 +132,21 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}
 	}
 
-	all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	renderedRel, all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
 		log.Debug("Rendering helm chart template", "error", err)
 		return controller.ExternalObservation{}, fmt.Errorf("rendering helm chart template: %w", err)
 	}
 	if len(all) == 0 {
 		return controller.ExternalObservation{}, nil
+	}
+
+	if rel.Chart.Metadata.Version != renderedRel.Chart.Metadata.Version {
+		log.Debug("Composition package version mismatch.", "package", pkg.URL, "installed", rel.Chart.Metadata.Version, "expected", pkg.Version)
+		return controller.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: false,
+		}, nil
 	}
 
 	log.Debug("Setting managed array", "package", pkg.URL)
@@ -401,7 +400,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 			Password: pkg.RegistryAuth.Password,
 		}
 	}
-	all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	_, all, err := helmchart.RenderTemplate(ctx, renderOpts)
 	if err != nil {
 		log.Debug("Rendering helm chart template", "error", err)
 		return fmt.Errorf("rendering helm chart template: %w", err)

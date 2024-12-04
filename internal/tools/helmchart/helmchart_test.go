@@ -61,7 +61,7 @@ func TestRenderTemplate(t *testing.T) {
 		Resource:       res,
 	}
 
-	all, err := RenderTemplate(context.TODO(), opts)
+	_, all, err := RenderTemplate(context.TODO(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
