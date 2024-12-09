@@ -30,7 +30,7 @@ func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifes
 		// your labels
 		labels["krateo.io/composition-id"] = string(r.UID)
 		labels["krateo.io/composition-group"] = r.CompositionGVR.Group
-		labels["krateo.io/composition-version"] = r.CompositionGVR.Version
+		labels["krateo.io/composition-installed-version"] = r.CompositionGVR.Version
 		labels["krateo.io/composition-resource"] = r.CompositionGVR.Resource
 		labels["krateo.io/composition-name"] = r.CompositionName
 		labels["krateo.io/composition-namespace"] = r.CompositionNamespace
