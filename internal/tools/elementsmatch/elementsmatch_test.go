@@ -79,6 +79,7 @@ func TestElementsMatch(t *testing.T) {
 		wantErr bool
 	}{
 		{"both nil", nil, nil, true, false},
+		{"one nil one not", nil, 42, false, true},
 		{"both empty slices", []int{}, []int{}, true, false},
 		{"equal slices", []int{1, 2, 3}, []int{3, 2, 1}, true, false},
 		{"different length slices", []int{1, 2, 3}, []int{1, 2}, false, false},
