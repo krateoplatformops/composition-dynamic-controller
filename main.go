@@ -32,7 +32,7 @@ import (
 
 const (
 	serviceName             = "composition-dynamic-controller"
-	compositionVersionLabel = "krateo.io/composition-version"
+	compositionVersionLabel = "krateo.io/composition-parent-version"
 )
 
 var (
