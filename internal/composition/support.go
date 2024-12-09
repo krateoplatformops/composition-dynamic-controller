@@ -35,6 +35,10 @@ func checkManaged(mg *unstructured.Unstructured, managed []interface{}) (bool, e
 	mapstatus := status.(map[string]interface{})
 	managedStatus := mapstatus["managed"]
 
+	if managedStatus == nil {
+		return false, nil
+	}
+
 	return elementsmatch.ElementsMatch(managedStatus, managed)
 }
 

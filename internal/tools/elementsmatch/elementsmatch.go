@@ -58,20 +58,27 @@ func ObjectsAreEqual(expected, actual interface{}) bool {
 	return bytes.Equal(exp, act)
 }
 
+// ElementsMatch determines if two lists contain the same elements, regardless of order.
 func ElementsMatch(listA, listB interface{}) (ok bool, err error) {
 	if isEmpty(listA) && isEmpty(listB) {
 		return true, nil
 	}
 
-	aKind := reflect.TypeOf(listA).Kind()
-	bKind := reflect.TypeOf(listB).Kind()
-
-	if aKind != reflect.Array && aKind != reflect.Slice {
-		return false, fmt.Errorf("%q has an unsupported type %s", listA, aKind)
+	aType := reflect.TypeOf(listA)
+	if aType == nil {
+		return false, fmt.Errorf("listA is nil")
+	}
+	bType := reflect.TypeOf(listB)
+	if bType == nil {
+		return false, fmt.Errorf("listB is nil")
 	}
 
-	if bKind != reflect.Array && bKind != reflect.Slice {
-		return false, fmt.Errorf("%q has an unsupported type %s", listB, bKind)
+	if aType.Kind() != reflect.Array && aType.Kind() != reflect.Slice {
+		return false, fmt.Errorf("%q has an unsupported type %s", listA, aType.Kind())
+	}
+
+	if bType.Kind() != reflect.Array && bType.Kind() != reflect.Slice {
+		return false, fmt.Errorf("%q has an unsupported type %s", listB, bType.Kind())
 	}
 
 	aValue := reflect.ValueOf(listA)

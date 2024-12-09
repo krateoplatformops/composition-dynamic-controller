@@ -67,6 +67,10 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to add compositionResource to values: %w", err)
 	}
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetObjectKind().GroupVersionKind().Kind, "global", "compositionKind")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add compositionKind to values: %w", err)
+	}
 
 	claimGen := opts.Resource.GetGeneration()
 	chartSpec.ValuesYaml = string(dat)
@@ -76,6 +80,7 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 			CompositionName:      opts.Resource.GetName(),
 			CompositionNamespace: opts.Resource.GetNamespace(),
 			CompositionGVR:       gvr,
+			CompositionGVK:       opts.Resource.GetObjectKind().GroupVersionKind(),
 		},
 	}
 	rel, err := opts.HelmClient.InstallOrUpgradeChart(ctx, &chartSpec, helmOpts)

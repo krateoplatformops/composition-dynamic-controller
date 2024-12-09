@@ -14,6 +14,7 @@ type labelsPostRender struct {
 	CompositionGVR       schema.GroupVersionResource
 	CompositionName      string
 	CompositionNamespace string
+	CompositionGVK       schema.GroupVersionKind
 }
 
 func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifests *bytes.Buffer, err error) {
@@ -33,6 +34,7 @@ func (r *labelsPostRender) Run(renderedManifests *bytes.Buffer) (modifiedManifes
 		labels["krateo.io/composition-resource"] = r.CompositionGVR.Resource
 		labels["krateo.io/composition-name"] = r.CompositionName
 		labels["krateo.io/composition-namespace"] = r.CompositionNamespace
+		labels["krateo.io/composition-kind"] = r.CompositionGVK.Kind
 		v.SetLabels(labels)
 	}
 

@@ -534,8 +534,10 @@ func (c *HelmClient) uninstallRelease(spec *ChartSpec) error {
 	client := action.NewUninstall(c.ActionConfig)
 
 	mergeUninstallReleaseOptions(spec, client)
+	client.IgnoreNotFound = true
 
 	resp, err := client.Run(spec.ReleaseName)
+
 	if err != nil {
 		return err
 	}
