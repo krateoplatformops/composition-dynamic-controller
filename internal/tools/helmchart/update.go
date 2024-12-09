@@ -65,6 +65,10 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to add compositionResource to values: %w", err)
 	}
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetObjectKind().GroupVersionKind().Kind, "global", "compositionKind")
+	if err != nil {
+		return fmt.Errorf("failed to add compositionKind to values: %w", err)
+	}
 
 	chartSpec.ValuesYaml = string(dat)
 	helmOpts := &helmclient.GenericHelmOptions{
@@ -73,6 +77,7 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 			CompositionName:      opts.Resource.GetName(),
 			CompositionNamespace: opts.Resource.GetNamespace(),
 			CompositionGVR:       gvr,
+			CompositionGVK:       opts.Resource.GetObjectKind().GroupVersionKind(),
 		},
 	}
 
