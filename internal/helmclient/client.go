@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -39,6 +40,7 @@ const (
 	defaultCachePath            = "/tmp/.helmcache"
 	defaultRepositoryConfigPath = "/tmp/.helmrepo"
 	defaultConfigPath           = "/tmp/.helmconfig"
+	DefaultRegistryConfigPath   = "/tmp"
 )
 
 // New returns a new Helm client with the provided options
@@ -136,6 +138,7 @@ func setEnvSettings(ppOptions **Options, settings *cli.EnvSettings) error {
 		*ppOptions = &Options{
 			RepositoryConfig: defaultRepositoryConfigPath,
 			RepositoryCache:  defaultCachePath,
+			RegistryConfig:   filepath.Join(DefaultRegistryConfigPath, registry.CredentialsFileBasename),
 			Linting:          true,
 		}
 	}
