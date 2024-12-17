@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/env"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
@@ -14,6 +17,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/tools"
+	"helm.sh/helm/v3/pkg/registry"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/discovery"
@@ -26,8 +30,10 @@ import (
 )
 
 var (
-	errReleaseNotFound  = errors.New("helm release not found")
-	errCreateIncomplete = "cannot determine creation result - remove the " + meta.AnnotationKeyExternalCreatePending + " annotation if it is safe to proceed"
+	errReleaseNotFound     = errors.New("helm release not found")
+	errCreateIncomplete    = "cannot determine creation result - remove the " + meta.AnnotationKeyExternalCreatePending + " annotation if it is safe to proceed"
+	helmRegistryConfigPath = env.GetEnvOrDefault("HELM_REGISTRY_CONFIG_PATH", helmclient.DefaultRegistryConfigPath)
+	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 )
 
 const (
@@ -37,6 +43,8 @@ const (
 	reasonNotReady  = "CompositionNotReady"
 	reasonUpdated   = "CompositionUpdated"
 	reasonInstalled = "CompositionInstalled"
+
+	helmRegistryConfigPathEnvVar = "HELM_REGISTRY_CONFIG_PATH"
 )
 
 const (
@@ -47,6 +55,13 @@ const (
 var _ controller.ExternalClient = (*handler)(nil)
 
 func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event record.EventRecorder, dyn dynamic.Interface, disc discovery.CachedDiscoveryInterface, pluralizer pluralizer.Pluralizer) controller.ExternalClient {
+	val, ok := os.LookupEnv(helmRegistryConfigPathEnvVar)
+	if ok {
+		helmRegistryConfigPath = val
+	}
+
+	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
+
 	return &handler{
 		pluralizer:        pluralizer,
 		logger:            log,
@@ -484,6 +499,7 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 		Namespace:        mg.GetNamespace(),
 		RepositoryCache:  "/tmp/.helmcache",
 		RepositoryConfig: "/tmp/.helmrepo",
+		RegistryConfig:   helmRegistryConfigFile,
 		Debug:            true,
 		Linting:          false,
 		DebugLog: func(format string, v ...interface{}) {
