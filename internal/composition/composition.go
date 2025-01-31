@@ -33,6 +33,7 @@ var (
 	errReleaseNotFound     = errors.New("helm release not found")
 	errCreateIncomplete    = "cannot determine creation result - remove the " + meta.AnnotationKeyExternalCreatePending + " annotation if it is safe to proceed"
 	helmRegistryConfigPath = env.GetEnvOrDefault("HELM_REGISTRY_CONFIG_PATH", helmclient.DefaultRegistryConfigPath)
+	krateoNamespace        = env.GetEnvOrDefault("KRATEO_NAMESPACE", "krateo-system")
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 )
 
@@ -267,11 +268,12 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 			DynamicClient: h.dynamicClient,
 			Pluralizer:    h.pluralizer,
 		},
-		HelmClient: hc,
-		ChartName:  pkg.URL,
-		Resource:   mg,
-		Repo:       pkg.Repo,
-		Version:    pkg.Version,
+		HelmClient:      hc,
+		ChartName:       pkg.URL,
+		Resource:        mg,
+		Repo:            pkg.Repo,
+		Version:         pkg.Version,
+		KrateoNamespace: krateoNamespace,
 	}
 	if pkg.RegistryAuth != nil {
 		opts.Credentials = &helmchart.Credentials{
@@ -371,11 +373,12 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 			DynamicClient: h.dynamicClient,
 			Pluralizer:    h.pluralizer,
 		},
-		HelmClient: hc,
-		ChartName:  pkg.URL,
-		Resource:   mg,
-		Repo:       pkg.Repo,
-		Version:    pkg.Version,
+		HelmClient:      hc,
+		ChartName:       pkg.URL,
+		Resource:        mg,
+		Repo:            pkg.Repo,
+		Version:         pkg.Version,
+		KrateoNamespace: krateoNamespace,
 	}
 	if pkg.RegistryAuth != nil {
 		opts.Credentials = &helmchart.Credentials{

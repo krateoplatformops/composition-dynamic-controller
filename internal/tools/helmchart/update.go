@@ -11,12 +11,13 @@ import (
 
 type UpdateOptions struct {
 	CheckResourceOptions
-	HelmClient  helmclient.Client
-	ChartName   string
-	Version     string
-	Resource    *unstructured.Unstructured
-	Repo        string
-	Credentials *Credentials
+	HelmClient      helmclient.Client
+	ChartName       string
+	Version         string
+	Resource        *unstructured.Unstructured
+	Repo            string
+	Credentials     *Credentials
+	KrateoNamespace string
 }
 
 func Update(ctx context.Context, opts UpdateOptions) error {
@@ -51,6 +52,21 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 	gvr, err := opts.Pluralizer.GVKtoGVR(opts.Resource.GetObjectKind().GroupVersionKind())
 	if err != nil {
 		return fmt.Errorf("failed to get GVR: %w", err)
+	}
+
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetNamespace(), "global", "compositionNamespace")
+	if err != nil {
+		return fmt.Errorf("failed to add compositionNamespace to values: %w", err)
+	}
+
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetName(), "global", "compositionName")
+	if err != nil {
+		return fmt.Errorf("failed to add compositionName to values: %w", err)
+	}
+
+	dat, err = AddOrUpdateFieldInValues(dat, opts.KrateoNamespace, "global", "krateoNamespace")
+	if err != nil {
+		return fmt.Errorf("failed to add krateoNamespace to values: %w", err)
 	}
 
 	dat, err = AddOrUpdateFieldInValues(dat, uid, "global", "compositionId")
