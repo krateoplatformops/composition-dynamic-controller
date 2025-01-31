@@ -17,12 +17,13 @@ type Credentials struct {
 
 type InstallOptions struct {
 	CheckResourceOptions
-	HelmClient  helmclient.Client
-	ChartName   string
-	Resource    *unstructured.Unstructured
-	Repo        string
-	Version     string
-	Credentials *Credentials
+	HelmClient      helmclient.Client
+	ChartName       string
+	Resource        *unstructured.Unstructured
+	Repo            string
+	Version         string
+	Credentials     *Credentials
+	KrateoNamespace string
 }
 
 func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64, error) {
@@ -53,6 +54,21 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	gvr, err := opts.Pluralizer.GVKtoGVR(opts.Resource.GetObjectKind().GroupVersionKind())
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get GVR: %w", err)
+	}
+
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetNamespace(), "global", "compositionNamespace")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add compositionNamespace to values: %w", err)
+	}
+
+	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetName(), "global", "compositionName")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add compositionName to values: %w", err)
+	}
+
+	dat, err = AddOrUpdateFieldInValues(dat, opts.KrateoNamespace, "global", "krateoNamespace")
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to add krateoNamespace to values: %w", err)
 	}
 
 	dat, err = AddOrUpdateFieldInValues(dat, uid, "global", "compositionId")
