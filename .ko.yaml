@@ -9,4 +9,4 @@ builds:
   - -extldflags "-static"
 defaultPlatforms:
 - linux/arm64
-#- linux/amd64
+- linux/amd64
