@@ -133,8 +133,18 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 				g.logger.Debug("Invalid format for 'status.apiVersion'", "name", el.GetName(), "namespace", el.GetNamespace())
 				continue
 			}
+			kind, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "kind")
+			if err != nil {
+				g.logger.Debug("Failed to resolve 'status.kind'", "error", err.Error(), "name", el.GetName(), "namespace", el.GetNamespace())
+				continue
+			}
+			if !ok {
+				g.logger.Debug("Failed to resolve 'status.kind'", "name", el.GetName(), "namespace", el.GetNamespace())
+				continue
+			}
+
 			version := versionSplit[1]
-			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] {
+			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] && kind == el.GetKind() {
 				compositionDefinition = el
 				found = true
 				break
