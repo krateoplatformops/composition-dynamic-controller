@@ -186,7 +186,7 @@ func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) (
 
 type CheckResourceOptions struct {
 	DynamicClient dynamic.Interface
-	Pluralizer    pluralizer.Pluralizer
+	Pluralizer    pluralizer.PluralizerInterface
 	// DiscoveryClient discovery.DiscoveryInterface
 }
 

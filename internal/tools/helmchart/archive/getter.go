@@ -51,17 +51,11 @@ func Static(chart string) Getter {
 	return staticGetter{chartName: chart}
 }
 
-func Dynamic(cfg *rest.Config, verbose bool, log logging.Logger) (Getter, error) {
+func Dynamic(cfg *rest.Config, log logging.Logger) (Getter, error) {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-
-	// if verbose {
-	// 	log.SetOutput(os.Stderr)
-	// } else {
-	// 	log.SetOutput(io.Discard)
-	// }
 
 	return &dynamicGetter{
 		dynamicClient: dyn,
@@ -144,7 +138,7 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			}
 
 			version := versionSplit[1]
-			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] && kind == el.GetKind() {
+			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] && kind == uns.GetKind() {
 				compositionDefinition = el
 				found = true
 				break
