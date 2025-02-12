@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/support"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
+	"github.com/krateoplatformops/snowplow/plumbing/env"
 	genctrl "github.com/krateoplatformops/unstructured-runtime"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/eventrecorder"
@@ -41,25 +41,25 @@ var (
 
 func main() {
 	// Flags
-	kubeconfig := flag.String("kubeconfig", support.EnvString("KUBECONFIG", ""),
+	kubeconfig := flag.String("kubeconfig", env.String("KUBECONFIG", ""),
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
-		support.EnvBool("COMPOSITION_CONTROLLER_DEBUG", false), "dump verbose output")
-	workers := flag.Int("workers", support.EnvInt("COMPOSITION_CONTROLLER_WORKERS", 1), "number of workers")
+		env.Bool("COMPOSITION_CONTROLLER_DEBUG", false), "dump verbose output")
+	workers := flag.Int("workers", env.Int("COMPOSITION_CONTROLLER_WORKERS", 1), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		support.EnvDuration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
+		env.Duration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
 	resourceGroup := flag.String("group",
-		support.EnvString("COMPOSITION_CONTROLLER_GROUP", ""), "resource api group")
+		env.String("COMPOSITION_CONTROLLER_GROUP", ""), "resource api group")
 	resourceVersion := flag.String("version",
-		support.EnvString("COMPOSITION_CONTROLLER_VERSION", ""), "resource api version")
+		env.String("COMPOSITION_CONTROLLER_VERSION", ""), "resource api version")
 	resourceName := flag.String("resource",
-		support.EnvString("COMPOSITION_CONTROLLER_RESOURCE", ""), "resource plural name")
+		env.String("COMPOSITION_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
-		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
+		env.String("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
 	chart := flag.String("chart",
-		support.EnvString("COMPOSITION_CONTROLLER_CHART", ""), "chart")
+		env.String("COMPOSITION_CONTROLLER_CHART", ""), "chart")
 	urlplurals := flag.String("urlplurals",
-		support.EnvString("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
+		env.String("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/env"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
+	"github.com/krateoplatformops/snowplow/plumbing/env"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
@@ -32,8 +32,8 @@ import (
 var (
 	errReleaseNotFound     = errors.New("helm release not found")
 	errCreateIncomplete    = "cannot determine creation result - remove the " + meta.AnnotationKeyExternalCreatePending + " annotation if it is safe to proceed"
-	helmRegistryConfigPath = env.GetEnvOrDefault("HELM_REGISTRY_CONFIG_PATH", helmclient.DefaultRegistryConfigPath)
-	krateoNamespace        = env.GetEnvOrDefault("KRATEO_NAMESPACE", "krateo-system")
+	helmRegistryConfigPath = env.String("HELM_REGISTRY_CONFIG_PATH", helmclient.DefaultRegistryConfigPath)
+	krateoNamespace        = env.String("KRATEO_NAMESPACE", "krateo-system")
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 )
 
