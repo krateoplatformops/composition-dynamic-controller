@@ -12,9 +12,7 @@ type Namespaced struct {
 
 type RBAC struct {
 	Namespaced         map[string]Namespaced
-	Role               *rbacv1.Role
 	ClusterRole        *rbacv1.ClusterRole
-	RoleBinding        *rbacv1.RoleBinding
 	ClusterRoleBinding *rbacv1.ClusterRoleBinding
 }
 
