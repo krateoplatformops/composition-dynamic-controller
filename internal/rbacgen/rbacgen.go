@@ -12,6 +12,7 @@ import (
 
 type RBACGenInterface interface {
 	Generate(compositionDefinitionUID, compositionDefinitionNamespace, compositionUID, compositionNamespace string) (*rbac.RBAC, error)
+	WithBaseName(baseName string) RBACGenInterface
 }
 
 type RBACGen struct {
@@ -23,13 +24,17 @@ type RBACGen struct {
 
 var _ RBACGenInterface = &RBACGen{}
 
-func NewRBACGen(basename string, saName string, saNamespace string, chartInspector chartinspector.ChartInspectorInterface) *RBACGen {
+func NewRBACGen(saName string, saNamespace string, chartInspector chartinspector.ChartInspectorInterface) *RBACGen {
 	return &RBACGen{
 		chartInspector: chartInspector,
-		baseName:       basename,
 		saName:         saName,
 		saNamespace:    saNamespace,
 	}
+}
+
+func (r *RBACGen) WithBaseName(baseName string) RBACGenInterface {
+	r.baseName = baseName
+	return r
 }
 
 func (r *RBACGen) Generate(compositionDefinitionUID, compositionDefinitionNamespace, compositionUID, compositionNamespace string) (*rbac.RBAC, error) {

@@ -18,6 +18,10 @@ type RBACInstaller struct {
 	DynamicClient dynamic.Interface
 }
 
+func NewRBACInstaller(cli dynamic.Interface) *RBACInstaller {
+	return &RBACInstaller{DynamicClient: cli}
+}
+
 func (i *RBACInstaller) ApplyRBAC(rbac *RBAC) error {
 	if rbac.ClusterRole != nil {
 		_, err := i.ApplyClusterRole(context.Background(), rbac.ClusterRole)

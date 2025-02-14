@@ -23,11 +23,13 @@ func (m *MockChartInspector) Resources(compositionDefinitionUID, compositionDefi
 	return args.Get(0).([]chartinspector.Resource), args.Error(1)
 }
 
+var _ chartinspector.ChartInspectorInterface = &MockChartInspector{}
+
 func TestRBACGen_Generate(t *testing.T) {
 
 	t.Run("successfully generates RBAC policies", func(t *testing.T) {
 		mockInspector := new(MockChartInspector)
-		rbacGen := NewRBACGen("test-base", "test-sa", "test-namespace", mockInspector)
+		rbacGen := NewRBACGen("test-sa", "test-namespace", mockInspector).WithBaseName("test-base")
 		mockResources := []chartinspector.Resource{
 			{Group: "group1", Resource: "resource1", Name: "name1"},
 			{Group: "group2", Resource: "resource2", Name: "name2", Namespace: "namespace1"},
@@ -79,7 +81,7 @@ func TestRBACGen_Generate(t *testing.T) {
 
 	t.Run("returns error when chartInspector fails", func(t *testing.T) {
 		mockInspector := new(MockChartInspector)
-		rbacGen := NewRBACGen("test-base", "test-sa", "test-namespace", mockInspector)
+		rbacGen := NewRBACGen("test-sa", "test-namespace", mockInspector).WithBaseName("test-base")
 		mockInspector.On("Resources", "compDefUID", "compDefNS", "compUID", "compNS").Return(nil, errors.New("some error"))
 
 		policy, err := rbacGen.Generate("compDefUID", "compDefNS", "compUID", "compNS")

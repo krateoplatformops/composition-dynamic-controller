@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/rbacgen"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/rbac"
 	"github.com/krateoplatformops/snowplow/plumbing/env"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
@@ -55,7 +57,7 @@ const (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event record.EventRecorder, dyn dynamic.Interface, disc discovery.CachedDiscoveryInterface, pluralizer pluralizer.Pluralizer) controller.ExternalClient {
+func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event record.EventRecorder, dyn dynamic.Interface, disc discovery.CachedDiscoveryInterface, pluralizer pluralizer.PluralizerInterface, rbacgen rbacgen.RBACGenInterface) controller.ExternalClient {
 	val, ok := os.LookupEnv(helmRegistryConfigPathEnvVar)
 	if ok {
 		helmRegistryConfigPath = val
@@ -64,6 +66,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event 
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 
 	return &handler{
+		rbacgen:           rbacgen,
 		pluralizer:        pluralizer,
 		logger:            log,
 		dynamicClient:     dyn,
@@ -74,8 +77,9 @@ func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event 
 }
 
 type handler struct {
+	rbacgen           rbacgen.RBACGenInterface
 	logger            logging.Logger
-	pluralizer        pluralizer.Pluralizer
+	pluralizer        pluralizer.PluralizerInterface
 	dynamicClient     dynamic.Interface
 	discoveryClient   discovery.CachedDiscoveryInterface
 	packageInfoGetter archive.Getter
@@ -191,7 +195,6 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
 	_ = unstructuredtools.SetCondition(mg, condition.Available())
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		// DiscoveryClient: h.discoveryClient,
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
 	})
@@ -257,6 +260,21 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
+	// Get Resources and generate RBAC
+	generated, err := h.rbacgen.
+		WithBaseName(meta.GetReleaseName(mg)).
+		Generate(string(pkg.CompositionDefinitionInfo.UID), pkg.CompositionDefinitionInfo.Namespace, string(mg.GetUID()), mg.GetNamespace())
+	if err != nil {
+		log.Debug("Generating RBAC", "error", err)
+		return err
+	}
+	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	err = rbInstaller.ApplyRBAC(generated)
+	if err != nil {
+		log.Debug("Installing RBAC", "error", err)
+	}
+
+	// Install the helm chart
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
 		log.Debug("Getting helm client", "error", err)
@@ -362,6 +380,21 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
+	// Get Resources and generate RBAC
+	generated, err := h.rbacgen.
+		WithBaseName(meta.GetReleaseName(mg)).
+		Generate(string(pkg.CompositionDefinitionInfo.UID), pkg.CompositionDefinitionInfo.Namespace, string(mg.GetUID()), mg.GetNamespace())
+	if err != nil {
+		log.Debug("Generating RBAC", "error", err)
+		return err
+	}
+	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	err = rbInstaller.ApplyRBAC(generated)
+	if err != nil {
+		log.Debug("Installing RBAC", "error", err)
+	}
+
+	// Update the helm chart
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
 		log.Debug("Getting helm client", "error", err)

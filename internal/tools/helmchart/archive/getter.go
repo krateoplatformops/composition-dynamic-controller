@@ -13,9 +13,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
+
+type CompositionDefinitionInfo struct {
+	UID       types.UID
+	Namespace string
+}
 
 type Info struct {
 	// URL of the helm chart package that is being requested.
@@ -29,6 +35,9 @@ type Info struct {
 
 	// RegistryAuth is the credentials to access the registry.
 	RegistryAuth *helmclient.RegistryAuth `json:"registryAuth,omitempty"`
+
+	// CompositionDefinitionInfo is the information about the composition definition.
+	CompositionDefinitionInfo *CompositionDefinitionInfo `json:"compositionDefinitionInfo,omitempty"`
 }
 
 func (i *Info) IsOCI() bool {
@@ -210,6 +219,10 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			Username:              username,
 			Password:              password,
 			InsecureSkipTLSverify: insecureSkipTLSverify,
+		},
+		CompositionDefinitionInfo: &CompositionDefinitionInfo{
+			UID:       compositionDefinition.GetUID(),
+			Namespace: compositionDefinition.GetNamespace(),
 		},
 	}, nil
 }

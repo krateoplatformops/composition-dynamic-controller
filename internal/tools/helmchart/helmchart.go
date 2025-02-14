@@ -81,7 +81,7 @@ type RenderTemplateOptions struct {
 	Resource       *unstructured.Unstructured
 	Repo           string
 	Credentials    *Credentials
-	Pluralizer     pluralizer.Pluralizer
+	Pluralizer     pluralizer.PluralizerInterface
 }
 
 func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) (*release.Release, []objectref.ObjectRef, error) {

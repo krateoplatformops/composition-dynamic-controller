@@ -42,7 +42,7 @@ func checkManaged(mg *unstructured.Unstructured, managed []interface{}) (bool, e
 	return elementsmatch.ElementsMatch(managedStatus, managed)
 }
 
-func populateManagedResources(pluralizer pluralizer.Pluralizer, resources []objectref.ObjectRef) ([]interface{}, error) {
+func populateManagedResources(pluralizer pluralizer.PluralizerInterface, resources []objectref.ObjectRef) ([]interface{}, error) {
 	var managed []interface{}
 	for _, ref := range resources {
 		gvr, err := pluralizer.GVKtoGVR(schema.FromAPIVersionAndKind(ref.APIVersion, ref.Kind))
