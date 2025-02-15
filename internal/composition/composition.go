@@ -193,8 +193,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
 	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
-	_ = unstructuredtools.SetCondition(mg, condition.Available())
-	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+	err = unstructuredtools.SetCondition(mg, condition.Available())
+	if err != nil {
+		log.Debug("Setting condition", "error", err)
+		return controller.ExternalObservation{}, err
+	}
+
+	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
 	})

@@ -6,16 +6,18 @@ package composition
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	genctrl "github.com/krateoplatformops/unstructured-runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/stretchr/testify/mock"
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/gobuffalo/flect"
@@ -30,19 +32,21 @@ import (
 	"github.com/krateoplatformops/snowplow/plumbing/e2e"
 	xenv "github.com/krateoplatformops/snowplow/plumbing/env"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
 	memory "k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/e2e-framework/klient/decoder"
+	"sigs.k8s.io/e2e-framework/klient/k8s"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/envfuncs"
 	"sigs.k8s.io/e2e-framework/pkg/features"
+	"sigs.k8s.io/e2e-framework/pkg/utils"
 	"sigs.k8s.io/e2e-framework/support/kind"
 )
 
@@ -59,29 +63,17 @@ func (p FakePluralizer) GVKtoGVR(gvk schema.GroupVersionKind) (schema.GroupVersi
 	}, nil
 }
 
-type FakeChartInspector struct {
-	mock.Mock
-}
-
-func (m *FakeChartInspector) Resources(compositionDefinitionUID, compositionDefinitionNamespace, compositionUID, compositionNamespace string) ([]chartinspector.Resource, error) {
-	args := m.Called(compositionDefinitionUID, compositionDefinitionNamespace, compositionUID, compositionNamespace)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]chartinspector.Resource), args.Error(1)
-}
-
-var _ chartinspector.ChartInspectorInterface = &FakeChartInspector{}
-
 var (
 	testenv     env.Environment
 	clusterName string
 )
 
 const (
-	testdataPath = "../../../testdata"
-	namespace    = "demo-system"
-	altNamespace = "krateo-system"
+	testdataPath      = "../../testdata"
+	manifestsPath     = "../../manifests"
+	namespace         = "demo-system"
+	altNamespace      = "krateo-system"
+	chartInspectorUrl = "http://localhost:8081"
 )
 
 func TestMain(m *testing.M) {
@@ -94,14 +86,26 @@ func TestMain(m *testing.M) {
 		envfuncs.CreateCluster(kind.NewProvider(), clusterName),
 		e2e.CreateNamespace(namespace),
 		e2e.CreateNamespace(altNamespace),
+		// envfuncs.CreateClusterWithConfig(kind.NewProvider(), clusterName, filepath.Join(manifestsPath, "manifests", "kind.yaml")),
 
 		func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
+			err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "*.yaml", nil)
+			if err != nil {
+				return ctx, err
+			}
+
+			time.Sleep(10 * time.Second)
+			go utils.RunCommandWithSeperatedOutput(
+				fmt.Sprintf("kubectl port-forward service/chart-inspector-service -n demo-system 8081:8081"),
+				io.Discard,
+				io.Discard,
+			)
 
 			return ctx, nil
 		},
 	).Finish(
-		envfuncs.DeleteNamespace(namespace),
-		envfuncs.DestroyCluster(clusterName),
+	// envfuncs.DeleteNamespace(namespace),
+	// envfuncs.DestroyCluster(clusterName),
 	)
 
 	os.Exit(testenv.Run(m))
@@ -110,7 +114,7 @@ func TestMain(m *testing.M) {
 func TestController(t *testing.T) {
 
 	var handler controller.ExternalClient
-	var labelselector labels.Selector
+	// var labelselector labels.Selector
 	var c *rest.Config
 	f := features.New("Setup").
 		Setup(e2e.Logger("test")).
@@ -125,17 +129,34 @@ func TestController(t *testing.T) {
 				return ctx
 			}
 
-			clientset, err := kubernetes.NewForConfig(c)
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "crds", "core"), "*.yaml", nil)
 			if err != nil {
-				t.Fatal(err)
+				t.Error("Applying crds composition manifests.", "error", err)
+				return ctx
 			}
 
-			_, err = clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, "test-sa", metav1.GetOptions{})
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "crds", "finops"), "*.yaml", nil)
 			if err != nil {
-				t.Fatal(err)
+				t.Error("Applying crds composition manifests.", "error", err)
+				return ctx
 			}
 
-			log := logging.NewNopLogger()
+			time.Sleep(2 * time.Second)
+
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "compositions"), "*.yaml", nil, decoder.MutateNamespace(namespace))
+			if err != nil {
+				t.Error("Applying composition manifests.", "error", err)
+				return ctx
+			}
+
+			err = decoder.ApplyWithManifestDir(ctx, r, filepath.Join(testdataPath, "compositiondefinitions"), "*.yaml", nil, decoder.MutateNamespace(namespace))
+			if err != nil {
+				t.Error("Applying composition definition manifests.", "error", err)
+				return ctx
+			}
+
+			zl := zap.New(zap.UseDevMode(true))
+			log := logging.NewLogrLogger(zl.WithName("composition-controller-test"))
 
 			var pig archive.Getter
 
@@ -144,17 +165,6 @@ func TestController(t *testing.T) {
 				t.Error("Creating chart url info getter.", "error", err)
 				return ctx
 			}
-
-			compositionVersionLabel := "core.krateo.io/composition-version"
-			resourceVersion := "v1alpha1"
-
-			// Create a label requirement for the composition version
-			labelreq, err := labels.NewRequirement(compositionVersionLabel, selection.Equals, []string{resourceVersion})
-			if err != nil {
-				t.Error("Creating label requirement.", "error", err)
-				return ctx
-			}
-			labelselector = labels.NewSelector().Add(*labelreq)
 
 			dyn, err := dynamic.NewForConfig(cfg.Client().RESTConfig())
 			if err != nil {
@@ -177,42 +187,277 @@ func TestController(t *testing.T) {
 			}
 
 			pluralizer := FakePluralizer{}
-			chartInspector := FakeChartInspector{}
+			chartInspector := chartinspector.NewChartInspector(chartInspectorUrl)
 			rbacgen := rbacgen.NewRBACGen("test-sa", altNamespace, &chartInspector)
 			handler = NewHandler(cfg.Client().RESTConfig(), log, pig, rec, dyn, cachedDisc, pluralizer, rbacgen)
 
-			controller := genctrl.New(genctrl.Options{
-				Discovery:      cachedDisc,
-				Client:         dyn,
-				ResyncInterval: 30 * time.Second,
-				GVR: schema.GroupVersionResource{
-					Group:    "composition.krateo.io",
-					Version:  "v1-1-10",
-					Resource: "fireworkapps",
-				},
-				Namespace:    namespace,
-				Config:       cfg.Client().RESTConfig(),
-				Debug:        true,
-				Logger:       log,
-				ProviderName: "composition-dynamic-controller",
-				ListWatcher: controller.ListWatcherConfiguration{
-					LabelSelector: ptr.To(labelselector.String()),
-				},
-				Pluralizer: pluralizer,
-			})
-			controller.SetExternalClient(handler)
+			resli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositiondefinitions")), "*.yaml")
+			if err != nil {
+				t.Log("Error decoding CRDs: ", err)
+				t.Fail()
+			}
 
-			r.WithNamespace(namespace)
+			for _, res := range resli {
+				uns, err := runtime.DefaultUnstructuredConverter.ToUnstructured(res)
+				if err != nil {
+					t.Log("Error converting CRD: ", err)
+					t.Fail()
+				}
 
-			go controller.Run(ctx, 1)
-
+				apiVersion, ok, err := unstructured.NestedString(uns, "status", "apiVersion")
+				if !ok || err != nil {
+					t.Log("Error getting apiVersion: ", err)
+					t.Fail()
+				}
+				kind, ok, err := unstructured.NestedString(uns, "status", "kind")
+				if !ok || err != nil {
+					t.Log("Error getting kind: ", err)
+					t.Fail()
+				}
+				err = r.PatchStatus(ctx, res, k8s.Patch{
+					PatchType: types.MergePatchType,
+					Data:      []byte(fmt.Sprintf(`{"status": {"apiVersion": "%s", "kind": "%s"}}`, apiVersion, kind)),
+				})
+				if err != nil {
+					t.Log("Error patching Composition: ", err)
+					t.Fail()
+					return ctx
+				}
+			}
 			return ctx
-		}).Assess("Install", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-		fmt.Println("Assessing")
+		}).Assess("Create", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dynamic := dynamic.NewForConfigOrDie(c)
+		objli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositions")), "*.yaml")
+		if err != nil {
+			t.Error("Decoding composition manifests.", "error", err)
+			return ctx
+		}
+
+		for _, obj := range objli {
+			version := obj.GetLabels()["krateo.io/composition-version"]
+			u, err := dynamic.Resource(schema.GroupVersionResource{
+				Group:    "composition.krateo.io",
+				Version:  version,
+				Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
+			}).Namespace(obj.GetNamespace()).Get(ctx, obj.GetName(), metav1.GetOptions{})
+			if err != nil {
+				t.Error("Getting composition.", "error", err)
+				return ctx
+			}
+
+			observation, err := handler.Observe(ctx, u)
+			if err != nil {
+				t.Error("Observing composition.", "error", err)
+				return ctx
+			}
+
+			ctx, err = handleObservation(t, ctx, handler, observation, u)
+			if err != nil {
+				t.Error("Handling observation.", "error", err)
+				return ctx
+			}
+		}
+		return ctx
+	}).Assess("Update", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		r, err := resources.New(cfg.Client().RESTConfig())
+		if err != nil {
+			t.Error("Creating resource client.", "error", err)
+			return ctx
+		}
+		dynamic := dynamic.NewForConfigOrDie(c)
+		var obj unstructured.Unstructured
+		err = decoder.DecodeFile(os.DirFS(filepath.Join(testdataPath, "compositions")), "focus.yaml", &obj)
+		if err != nil {
+			t.Error("Decoding composition manifests.", "error", err)
+			return ctx
+		}
+
+		version := obj.GetLabels()["krateo.io/composition-version"]
+		cli := dynamic.Resource(schema.GroupVersionResource{
+			Group:    "composition.krateo.io",
+			Version:  version,
+			Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
+		}).Namespace(obj.GetNamespace())
+		u, err := cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		observation, err := handler.Observe(ctx, u)
+		if err != nil {
+			t.Error("Observing composition.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		ctx, err = handleObservation(t, ctx, handler, observation, u)
+		if err != nil {
+			t.Error("Handling observation.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		observation, err = handler.Observe(ctx, u)
+		if err != nil {
+			t.Error("Observing composition.", "error", err)
+			return ctx
+		}
+		if observation.ResourceExists == true && observation.ResourceUpToDate == true {
+			t.Log("Composition already exists and is ready.")
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		err = r.PatchStatus(ctx, &obj, k8s.Patch{
+			PatchType: types.MergePatchType,
+			Data: []byte(`{
+  "status": {
+    "conditions": [{
+      "lastTransitionTime": "2025-02-14T10:00:00Z",
+      "message": "Resource is ready",
+      "reason": "ResourceReady",
+      "status": "True",
+      "type": "Ready"
+    }],
+    "armRegionName": "example-region",
+    "armSkuName": "example-sku",
+    "currencyCode": "USD",
+    "effectiveStartDate": "2025-01-01",
+    "isPrimaryMeterRegion": true,
+    "location": "example-location",
+    "meterId": "example-meter-id",
+    "meterName": "example-meter-name",
+    "productId": "example-product-id",
+    "productName": "example-product-name",
+    "retailPrice": "100.00",
+    "serviceFamily": "example-service-family",
+    "serviceId": "example-service-id",
+    "serviceName": "example-service-name",
+    "skuId": "example-sku-id",
+    "skuName": "example-sku-name",
+    "tierMinimumUnits": "1",
+    "type": "example-type",
+    "unitOfMeasure": "example-unit",
+    "unitPrice": "10.00"
+  }
+}`),
+		})
+		if err != nil {
+			t.Error("Patching composition.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		observation, err = handler.Observe(ctx, u)
+		if err != nil {
+			t.Error("Observing composition.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		ctx, err = handleObservation(t, ctx, handler, observation, u)
+		if err != nil {
+			t.Error("Handling observation.", "error", err)
+			return ctx
+		}
+
+		return ctx
+	}).Assess("Delete", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dynamic := dynamic.NewForConfigOrDie(c)
+		objli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositions")), "*.yaml")
+		if err != nil {
+			t.Error("Decoding composition manifests.", "error", err)
+			return ctx
+		}
+
+		for _, obj := range objli {
+			version := obj.GetLabels()["krateo.io/composition-version"]
+			u, err := dynamic.Resource(schema.GroupVersionResource{
+				Group:    "composition.krateo.io",
+				Version:  version,
+				Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
+			}).Namespace(obj.GetNamespace()).Get(ctx, obj.GetName(), metav1.GetOptions{})
+			if err != nil {
+				t.Error("Getting composition.", "error", err)
+				return ctx
+			}
+
+			observation, err := handler.Observe(ctx, u)
+			if err != nil {
+				t.Error("Observing composition.", "error", err)
+				return ctx
+			}
+
+			ctx, err = handleObservation(t, ctx, handler, observation, u)
+			if err != nil {
+				t.Error("Handling observation.", "error", err)
+				return ctx
+			}
+		}
 		return ctx
 	}).Feature()
 
 	testenv.Test(t, f)
+}
+
+func handleObservation(t *testing.T, ctx context.Context, handler controller.ExternalClient, observation controller.ExternalObservation, u *unstructured.Unstructured) (context.Context, error) {
+	var err error
+	if observation.ResourceExists == true && observation.ResourceUpToDate == true {
+		observation, err = handler.Observe(ctx, u)
+		if err != nil {
+			t.Error("Observing composition.", "error", err)
+			return ctx, err
+		}
+		if observation.ResourceExists == true && observation.ResourceUpToDate == true {
+			t.Log("Composition already exists and is ready.")
+			return ctx, nil
+		}
+	} else if observation.ResourceExists == false && observation.ResourceUpToDate == true {
+		err = handler.Delete(ctx, u)
+		if err != nil {
+			t.Error("Deleting composition.", "error", err)
+			return ctx, err
+		}
+	} else if observation.ResourceExists == true && observation.ResourceUpToDate == false {
+		err = handler.Update(ctx, u)
+		if err != nil {
+			t.Error("Updating composition.", "error", err)
+			return ctx, err
+		}
+	} else if observation.ResourceExists == false && observation.ResourceUpToDate == false {
+		err = handler.Create(ctx, u)
+		if err != nil {
+			t.Error("Creating composition.", "error", err)
+			return ctx, err
+		}
+	}
+	return ctx, nil
 }
 
 func SetSAToken(ctx context.Context, t *testing.T, cfg *envconf.Config) *rest.Config {
@@ -239,13 +484,13 @@ func SetSAToken(ctx context.Context, t *testing.T, cfg *envconf.Config) *rest.Co
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{""},
-				Resources: []string{"pods"},
-				Verbs:     []string{"get", "list", "watch"},
+				APIGroups: []string{"composition.krateo.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
 			},
 			{
-				APIGroups: []string{""},
-				Resources: []string{"serviceaccounts"},
+				APIGroups: []string{"core.krateo.io"},
+				Resources: []string{"compositiondefinitions"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 		},
@@ -269,6 +514,43 @@ func SetSAToken(ctx context.Context, t *testing.T, cfg *envconf.Config) *rest.Co
 		RoleRef: rbacv1.RoleRef{
 			Kind:     "Role",
 			Name:     "test-sa-role",
+			APIGroup: "rbac.authorization.k8s.io",
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-sa-cluster-role",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"roles", "rolebindings", "clusterroles", "clusterrolebindings"},
+				Verbs:     []string{"*"},
+			},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-sa-cluster-role-binding",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "test-sa",
+				Namespace: namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     "test-sa-cluster-role",
 			APIGroup: "rbac.authorization.k8s.io",
 		},
 	}, metav1.CreateOptions{})
