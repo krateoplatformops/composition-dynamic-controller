@@ -106,8 +106,8 @@ func TestMain(m *testing.M) {
 			return ctx, nil
 		},
 	).Finish(
-	// envfuncs.DeleteNamespace(namespace),
-	// envfuncs.DestroyCluster(clusterName),
+		envfuncs.DeleteNamespace(namespace),
+		envfuncs.DestroyCluster(clusterName),
 	)
 
 	os.Exit(testenv.Run(m))
@@ -430,6 +430,12 @@ func TestController(t *testing.T) {
 			ctx, err = handleObservation(t, ctx, handler, observation, u)
 			if err != nil {
 				t.Error("Handling observation.", "error", err)
+				return ctx
+			}
+
+			u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+			if err != nil {
+				t.Error("Getting composition.", "error", err)
 				return ctx
 			}
 
