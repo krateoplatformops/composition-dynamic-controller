@@ -11,7 +11,7 @@ require (
 	github.com/gobuffalo/flect v1.0.3
 	github.com/golang/mock v1.6.0
 	github.com/krateoplatformops/snowplow v0.0.0-20250211094905-3ea1b567e898
-	github.com/krateoplatformops/unstructured-runtime v0.0.7
+	github.com/krateoplatformops/unstructured-runtime v0.0.8
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.5
@@ -169,5 +169,3 @@ require (
 	sigs.k8s.io/kustomize/api v0.16.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 )
-
-replace github.com/krateoplatformops/unstructured-runtime v0.0.7 => /Users/matteogastaldello/Documents/unstructured-runtime
