@@ -102,6 +102,15 @@ func TestGetter(t *testing.T) {
 			}
 
 			err = decoder.DecodeEachFile(
+				ctx, os.DirFS(filepath.Join(testdataPath, "crds", "finops")), "*.yaml",
+				decoder.CreateIgnoreAlreadyExists(r),
+			)
+			if err != nil {
+				t.Log("Error decoding CRDs: ", err)
+				t.Fail()
+			}
+
+			err = decoder.DecodeEachFile(
 				ctx, os.DirFS(filepath.Join(testdataPath, "crds", "core")), "*.yaml",
 				decoder.CreateIgnoreAlreadyExists(r),
 			)

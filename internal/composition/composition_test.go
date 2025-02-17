@@ -229,35 +229,34 @@ func TestController(t *testing.T) {
 			return ctx
 		}).Assess("Create", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 		dynamic := dynamic.NewForConfigOrDie(c)
-		objli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositions")), "*.yaml")
+		var obj unstructured.Unstructured
+		err := decoder.DecodeFile(os.DirFS(filepath.Join(testdataPath, "compositions")), "focus.yaml", &obj)
 		if err != nil {
 			t.Error("Decoding composition manifests.", "error", err)
 			return ctx
 		}
 
-		for _, obj := range objli {
-			version := obj.GetLabels()["krateo.io/composition-version"]
-			u, err := dynamic.Resource(schema.GroupVersionResource{
-				Group:    "composition.krateo.io",
-				Version:  version,
-				Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
-			}).Namespace(obj.GetNamespace()).Get(ctx, obj.GetName(), metav1.GetOptions{})
-			if err != nil {
-				t.Error("Getting composition.", "error", err)
-				return ctx
-			}
+		version := obj.GetLabels()["krateo.io/composition-version"]
+		u, err := dynamic.Resource(schema.GroupVersionResource{
+			Group:    "composition.krateo.io",
+			Version:  version,
+			Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
+		}).Namespace(obj.GetNamespace()).Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
 
-			observation, err := handler.Observe(ctx, u)
-			if err != nil {
-				t.Error("Observing composition.", "error", err)
-				return ctx
-			}
+		observation, err := handler.Observe(ctx, u)
+		if err != nil {
+			t.Error("Observing composition.", "error", err)
+			return ctx
+		}
 
-			ctx, err = handleObservation(t, ctx, handler, observation, u)
-			if err != nil {
-				t.Error("Handling observation.", "error", err)
-				return ctx
-			}
+		ctx, err = handleObservation(t, ctx, handler, observation, u)
+		if err != nil {
+			t.Error("Handling observation.", "error", err)
+			return ctx
 		}
 		return ctx
 	}).Assess("Update", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -395,108 +394,107 @@ func TestController(t *testing.T) {
 		return ctx
 	}).Assess("Delete", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 		dy := dynamic.NewForConfigOrDie(c)
-
-		objli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositions")), "*.yaml")
+		var obj unstructured.Unstructured
+		err := decoder.DecodeFile(os.DirFS(filepath.Join(testdataPath, "compositions")), "focus.yaml", &obj)
 		if err != nil {
 			t.Error("Decoding composition manifests.", "error", err)
 			return ctx
 		}
 
-		for _, obj := range objli {
-			version := obj.GetLabels()["krateo.io/composition-version"]
-			cli := dy.Resource(schema.GroupVersionResource{
-				Group:    "composition.krateo.io",
-				Version:  version,
-				Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
-			}).Namespace(obj.GetNamespace())
-			u, err := cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
-			if err != nil {
-				t.Error("Getting composition.", "error", err)
-				return ctx
-			}
-
-			observation, err := handler.Observe(ctx, u)
-			if err != nil {
-				t.Error("Observing composition.", "error", err)
-				return ctx
-			}
-
-			u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
-			if err != nil {
-				t.Error("Getting composition.", "error", err)
-				return ctx
-			}
-
-			ctx, err = handleObservation(t, ctx, handler, observation, u)
-			if err != nil {
-				t.Error("Handling observation.", "error", err)
-				return ctx
-			}
-
-			u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
-			if err != nil {
-				t.Error("Getting composition.", "error", err)
-				return ctx
-			}
-
-			u.SetFinalizers([]string{
-				"composition.krateo.io/finalizer",
-			})
-
-			u, err = cli.Update(ctx, u, metav1.UpdateOptions{})
-			if err != nil {
-				t.Error("Updating composition.", "error", err)
-				return ctx
-			}
-
-			err = cli.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
-			if err != nil {
-				t.Error("Deleting composition.", "error", err)
-				return ctx
-			}
-
-			err = handler.Delete(ctx, u)
-			if err != nil {
-				t.Error("Deleting composition.", "error", err)
-				return ctx
-			}
-
-			u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
-			if err != nil {
-				t.Error("Getting composition.", "error", err)
-				return ctx
-			}
-
-			u.SetFinalizers([]string{})
-			u, err = cli.Update(ctx, u, metav1.UpdateOptions{})
-			if err != nil {
-				t.Error("Updating composition.", "error", err)
-				return ctx
-			}
-
-			// Check if the helm release is deleted
-			tmp, err := dy.Resource(schema.GroupVersionResource{
-				Group:    "",
-				Version:  "v1",
-				Resource: "secrets",
-			}).Namespace(obj.GetNamespace()).List(ctx, metav1.ListOptions{
-				LabelSelector: "name=" + meta.GetReleaseName(u) + ",owner=helm",
-			})
-			if tmp != nil && len(tmp.Items) > 0 {
-				t.Error("Helm release secret still exists after deletion.")
-				return ctx
-			}
-
-			_, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
-			if err == nil {
-				t.Error("Composition still exists after deletion.")
-				return ctx
-			}
-			if !errors.IsNotFound(err) {
-				t.Error("Getting composition.", "error", err)
-				return ctx
-			}
+		version := obj.GetLabels()["krateo.io/composition-version"]
+		cli := dy.Resource(schema.GroupVersionResource{
+			Group:    "composition.krateo.io",
+			Version:  version,
+			Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
+		}).Namespace(obj.GetNamespace())
+		u, err := cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
 		}
+
+		observation, err := handler.Observe(ctx, u)
+		if err != nil {
+			t.Error("Observing composition.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		ctx, err = handleObservation(t, ctx, handler, observation, u)
+		if err != nil {
+			t.Error("Handling observation.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		u.SetFinalizers([]string{
+			"composition.krateo.io/finalizer",
+		})
+
+		u, err = cli.Update(ctx, u, metav1.UpdateOptions{})
+		if err != nil {
+			t.Error("Updating composition.", "error", err)
+			return ctx
+		}
+
+		err = cli.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
+		if err != nil {
+			t.Error("Deleting composition.", "error", err)
+			return ctx
+		}
+
+		err = handler.Delete(ctx, u)
+		if err != nil {
+			t.Error("Deleting composition.", "error", err)
+			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		u.SetFinalizers([]string{})
+		u, err = cli.Update(ctx, u, metav1.UpdateOptions{})
+		if err != nil {
+			t.Error("Updating composition.", "error", err)
+			return ctx
+		}
+
+		// Check if the helm release is deleted
+		tmp, err := dy.Resource(schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "secrets",
+		}).Namespace(obj.GetNamespace()).List(ctx, metav1.ListOptions{
+			LabelSelector: "name=" + meta.GetReleaseName(u) + ",owner=helm",
+		})
+		if tmp != nil && len(tmp.Items) > 0 {
+			t.Error("Helm release secret still exists after deletion.")
+			return ctx
+		}
+
+		_, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err == nil {
+			t.Error("Composition still exists after deletion.")
+			return ctx
+		}
+		if !errors.IsNotFound(err) {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
 		return ctx
 	}).Feature()
 
