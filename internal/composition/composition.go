@@ -510,7 +510,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	chartSpec := helmclient.ChartSpec{
-		ReleaseName: mg.GetName(),
+		ReleaseName: meta.GetReleaseName(mg),
 		Namespace:   mg.GetNamespace(),
 		ChartName:   pkg.URL,
 		Version:     pkg.Version,

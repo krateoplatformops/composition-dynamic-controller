@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,6 +28,7 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/eventrecorder"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 
 	"github.com/krateoplatformops/snowplow/plumbing/e2e"
@@ -264,7 +266,7 @@ func TestController(t *testing.T) {
 			t.Error("Creating resource client.", "error", err)
 			return ctx
 		}
-		dynamic := dynamic.NewForConfigOrDie(c)
+		dy := dynamic.NewForConfigOrDie(c)
 		var obj unstructured.Unstructured
 		err = decoder.DecodeFile(os.DirFS(filepath.Join(testdataPath, "compositions")), "focus.yaml", &obj)
 		if err != nil {
@@ -273,7 +275,7 @@ func TestController(t *testing.T) {
 		}
 
 		version := obj.GetLabels()["krateo.io/composition-version"]
-		cli := dynamic.Resource(schema.GroupVersionResource{
+		cli := dy.Resource(schema.GroupVersionResource{
 			Group:    "composition.krateo.io",
 			Version:  version,
 			Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
@@ -313,10 +315,6 @@ func TestController(t *testing.T) {
 			t.Error("Observing composition.", "error", err)
 			return ctx
 		}
-		if observation.ResourceExists == true && observation.ResourceUpToDate == true {
-			t.Log("Composition already exists and is ready.")
-			return ctx
-		}
 
 		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
 		if err != nil {
@@ -324,39 +322,46 @@ func TestController(t *testing.T) {
 			return ctx
 		}
 
-		err = r.PatchStatus(ctx, &obj, k8s.Patch{
+		dyn2 := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		res, err := dyn2.Resource(schema.GroupVersionResource{
+			Resource: "datapresentationazures",
+			Group:    "finops.krateo.io",
+			Version:  "v1alpha1",
+		}).Namespace(obj.GetNamespace()).Get(ctx, "focus-1-focus-data-presentation-azure", metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting datapresentationazure.", "error", err)
+			return ctx
+		}
+
+		fmt.Println("Patching datapresentationazure", res.GetName())
+
+		err = r.PatchStatus(ctx, res, k8s.Patch{
 			PatchType: types.MergePatchType,
 			Data: []byte(`{
-  "status": {
-    "conditions": [{
-      "lastTransitionTime": "2025-02-14T10:00:00Z",
-      "message": "Resource is ready",
-      "reason": "ResourceReady",
-      "status": "True",
-      "type": "Ready"
-    }],
-    "armRegionName": "example-region",
-    "armSkuName": "example-sku",
-    "currencyCode": "USD",
-    "effectiveStartDate": "2025-01-01",
-    "isPrimaryMeterRegion": true,
-    "location": "example-location",
-    "meterId": "example-meter-id",
-    "meterName": "example-meter-name",
-    "productId": "example-product-id",
-    "productName": "example-product-name",
-    "retailPrice": "100.00",
-    "serviceFamily": "example-service-family",
-    "serviceId": "example-service-id",
-    "serviceName": "example-service-name",
-    "skuId": "example-sku-id",
-    "skuName": "example-sku-name",
-    "tierMinimumUnits": "1",
-    "type": "example-type",
-    "unitOfMeasure": "example-unit",
-    "unitPrice": "10.00"
-  }
-}`),
+			  "status": {
+				"armRegionName": "example-region",
+				"armSkuName": "example-sku",
+				"currencyCode": "USD",
+				"effectiveStartDate": "2025-01-01",
+				"isPrimaryMeterRegion": "true",
+				"location": "example-location",
+				"meterId": "example-meter-id",
+				"meterName": "example-meter-name",
+				"productId": "example-product-id",
+				"productName": "example-product-name",
+				"retailPrice": "100.00",
+				"serviceFamily": "Networking",
+				"serviceId": "example-service-id",
+				"serviceName": "example-service-name",
+				"skuId": "example-sku-id",
+				"skuName": "example-sku-name",
+				"tierMinimumUnits": "1",
+				"type": "example-type",
+				"unitOfMeasure": "example-unit",
+				"unitPrice": "10.00"
+			  }
+			}`),
 		})
 		if err != nil {
 			t.Error("Patching composition.", "error", err)
@@ -389,7 +394,8 @@ func TestController(t *testing.T) {
 
 		return ctx
 	}).Assess("Delete", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-		dynamic := dynamic.NewForConfigOrDie(c)
+		dy := dynamic.NewForConfigOrDie(c)
+
 		objli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositions")), "*.yaml")
 		if err != nil {
 			t.Error("Decoding composition manifests.", "error", err)
@@ -398,11 +404,12 @@ func TestController(t *testing.T) {
 
 		for _, obj := range objli {
 			version := obj.GetLabels()["krateo.io/composition-version"]
-			u, err := dynamic.Resource(schema.GroupVersionResource{
+			cli := dy.Resource(schema.GroupVersionResource{
 				Group:    "composition.krateo.io",
 				Version:  version,
 				Resource: flect.Pluralize(strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)),
-			}).Namespace(obj.GetNamespace()).Get(ctx, obj.GetName(), metav1.GetOptions{})
+			}).Namespace(obj.GetNamespace())
+			u, err := cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
 			if err != nil {
 				t.Error("Getting composition.", "error", err)
 				return ctx
@@ -414,9 +421,73 @@ func TestController(t *testing.T) {
 				return ctx
 			}
 
+			u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+			if err != nil {
+				t.Error("Getting composition.", "error", err)
+				return ctx
+			}
+
 			ctx, err = handleObservation(t, ctx, handler, observation, u)
 			if err != nil {
 				t.Error("Handling observation.", "error", err)
+				return ctx
+			}
+
+			u.SetFinalizers([]string{
+				"composition.krateo.io/finalizer",
+			})
+
+			u, err = cli.Update(ctx, u, metav1.UpdateOptions{})
+			if err != nil {
+				t.Error("Updating composition.", "error", err)
+				return ctx
+			}
+
+			err = cli.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
+			if err != nil {
+				t.Error("Deleting composition.", "error", err)
+				return ctx
+			}
+
+			err = handler.Delete(ctx, u)
+			if err != nil {
+				t.Error("Deleting composition.", "error", err)
+				return ctx
+			}
+
+			u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+			if err != nil {
+				t.Error("Getting composition.", "error", err)
+				return ctx
+			}
+
+			u.SetFinalizers([]string{})
+			u, err = cli.Update(ctx, u, metav1.UpdateOptions{})
+			if err != nil {
+				t.Error("Updating composition.", "error", err)
+				return ctx
+			}
+
+			// Check if the helm release is deleted
+			tmp, err := dy.Resource(schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "secrets",
+			}).Namespace(obj.GetNamespace()).List(ctx, metav1.ListOptions{
+				LabelSelector: "name=" + meta.GetReleaseName(u) + ",owner=helm",
+			})
+			if tmp != nil && len(tmp.Items) > 0 {
+				t.Error("Helm release secret still exists after deletion.")
+				return ctx
+			}
+
+			_, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+			if err == nil {
+				t.Error("Composition still exists after deletion.")
+				return ctx
+			}
+			if !errors.IsNotFound(err) {
+				t.Error("Getting composition.", "error", err)
 				return ctx
 			}
 		}
