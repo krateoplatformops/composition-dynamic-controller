@@ -6,78 +6,124 @@ package helmchart
 import (
 	"context"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/gobuffalo/flect"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	"helm.sh/helm/v3/pkg/release"
+
+	"github.com/krateoplatformops/snowplow/plumbing/e2e"
+	xenv "github.com/krateoplatformops/snowplow/plumbing/env"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	cacheddiscovery "k8s.io/client-go/discovery/cached/memory"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/restmapper"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
+	"sigs.k8s.io/e2e-framework/pkg/env"
+	"sigs.k8s.io/e2e-framework/pkg/envconf"
+	"sigs.k8s.io/e2e-framework/pkg/envfuncs"
+	"sigs.k8s.io/e2e-framework/pkg/features"
+	"sigs.k8s.io/e2e-framework/support/kind"
 )
 
-func TestInstall(t *testing.T) {
-	helmClient := newHelmClient()
-	ctx := context.TODO()
-	rc, err := newRestConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	uns, err := getUnstructured(rc, getUnstructuredOptions{
-		gvk:       schema.FromAPIVersionAndKind("composition.krateo.io/v0-1-0", "FireworksApp"),
-		name:      "test-1",
-		namespace: "demo-system",
-	})
-
-	// Create a dummy resource
-	res := createDummyResource()
-
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(rc)
-	if err != nil {
-		return nil, err
-	}
-
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(
-		cacheddiscovery.NewMemCacheClient(discoveryClient),
-	)
-
-	// Set up the install options
-	opts := InstallOptions{
-		HelmClient: helmClient,
-		ChartName:  "https://charts.bitnami.com/bitnami",
-		Resource:   res,
-		Repo:       "postgresql",
-		Version:    "12.8.3",
-		CheckResourceOptions: CheckResourceOptions{
-			DiscoveryClient: nil,
-		},
-	}
-
-	// Call the Install function
-	rel, _, err := Install(ctx, opts)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Check the returned release
-	expectedRelease := &release.Release{
-		Name:      "demo",
-		Namespace: "demo-system",
-		Version:   1,
-	}
-
-	if rel.Name != expectedRelease.Name || rel.Namespace != expectedRelease.Namespace || rel.Version != expectedRelease.Version {
-		t.Fatalf("expected release %v, got %v", expectedRelease, rel)
-	}
+type FakePluralizer struct {
 }
 
-func newRestConfig() (*rest.Config, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
+var _ pluralizer.PluralizerInterface = &FakePluralizer{}
 
-	return clientcmd.BuildConfigFromFlags("", filepath.Join(home, ".kube", "config"))
+func (p FakePluralizer) GVKtoGVR(gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
+	return schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: flect.Pluralize(strings.ToLower(gvk.Kind)),
+	}, nil
+}
+
+var (
+	testenv     env.Environment
+	clusterName string
+	namespace   string
+)
+
+const (
+	testdataPath = "../../../testdata"
+)
+
+func TestMain(m *testing.M) {
+	xenv.SetTestMode(true)
+
+	namespace = "demo-system"
+	altNamespace := "krateo-system"
+	clusterName = "krateo"
+	testenv = env.New()
+
+	testenv.Setup(
+		envfuncs.CreateCluster(kind.NewProvider(), clusterName),
+		e2e.CreateNamespace(namespace),
+		e2e.CreateNamespace(altNamespace),
+
+		func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
+			r, err := resources.New(cfg.Client().RESTConfig())
+			if err != nil {
+				return ctx, err
+			}
+
+			r.WithNamespace(namespace)
+
+			return ctx, nil
+		},
+	).Finish(
+		envfuncs.DeleteNamespace(namespace),
+		envfuncs.DestroyCluster(clusterName),
+	)
+
+	os.Exit(testenv.Run(m))
+}
+
+func TestInstall(t *testing.T) {
+
+	f := features.New("Setup").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Install", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+
+		helmClient := newHelmClient()
+
+		// Create a dummy resource
+		res := createDummyResource()
+
+		dynamicClient, err := dynamic.NewForConfig(cfg.Client().RESTConfig())
+
+		// Set up the install options
+		opts := InstallOptions{
+			HelmClient: helmClient,
+			ChartName:  "https://charts.bitnami.com/bitnami",
+			Resource:   res,
+			Repo:       "postgresql",
+			Version:    "12.8.3",
+			CheckResourceOptions: CheckResourceOptions{
+				DynamicClient: dynamicClient,
+				Pluralizer:    FakePluralizer{},
+			},
+		}
+
+		// Call the Install function
+		rel, _, err := Install(ctx, opts)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Check the returned release
+		expectedRelease := &release.Release{
+			Name:      "demo",
+			Namespace: "demo-system",
+			Version:   1,
+		}
+
+		if rel.Name != expectedRelease.Name || rel.Namespace != expectedRelease.Namespace || rel.Version != expectedRelease.Version {
+			t.Fatalf("expected release %v, got %v", expectedRelease, rel)
+		}
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
 }

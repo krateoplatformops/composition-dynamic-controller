@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/chartinspector"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/support"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/rbacgen"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
+	"github.com/krateoplatformops/snowplow/plumbing/env"
 	genctrl "github.com/krateoplatformops/unstructured-runtime"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/eventrecorder"
@@ -35,31 +37,33 @@ const (
 	compositionVersionLabel = "krateo.io/composition-version"
 )
 
-var (
-	Build string
-)
-
 func main() {
 	// Flags
-	kubeconfig := flag.String("kubeconfig", support.EnvString("KUBECONFIG", ""),
+	kubeconfig := flag.String("kubeconfig", env.String("KUBECONFIG", ""),
 		"absolute path to the kubeconfig file")
 	debug := flag.Bool("debug",
-		support.EnvBool("COMPOSITION_CONTROLLER_DEBUG", false), "dump verbose output")
-	workers := flag.Int("workers", support.EnvInt("COMPOSITION_CONTROLLER_WORKERS", 1), "number of workers")
+		env.Bool("COMPOSITION_CONTROLLER_DEBUG", false), "dump verbose output")
+	workers := flag.Int("workers", env.Int("COMPOSITION_CONTROLLER_WORKERS", 1), "number of workers")
 	resyncInterval := flag.Duration("resync-interval",
-		support.EnvDuration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
+		env.Duration("COMPOSITION_CONTROLLER_RESYNC_INTERVAL", time.Minute*3), "resync interval")
 	resourceGroup := flag.String("group",
-		support.EnvString("COMPOSITION_CONTROLLER_GROUP", ""), "resource api group")
+		env.String("COMPOSITION_CONTROLLER_GROUP", ""), "resource api group")
 	resourceVersion := flag.String("version",
-		support.EnvString("COMPOSITION_CONTROLLER_VERSION", ""), "resource api version")
+		env.String("COMPOSITION_CONTROLLER_VERSION", ""), "resource api version")
 	resourceName := flag.String("resource",
-		support.EnvString("COMPOSITION_CONTROLLER_RESOURCE", ""), "resource plural name")
+		env.String("COMPOSITION_CONTROLLER_RESOURCE", ""), "resource plural name")
 	namespace := flag.String("namespace",
-		support.EnvString("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
+		env.String("COMPOSITION_CONTROLLER_NAMESPACE", "default"), "namespace")
 	chart := flag.String("chart",
-		support.EnvString("COMPOSITION_CONTROLLER_CHART", ""), "chart")
+		env.String("COMPOSITION_CONTROLLER_CHART", ""), "chart")
 	urlplurals := flag.String("urlplurals",
-		support.EnvString("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
+		env.String("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
+	urlChartInspector := flag.String("urlChartInspector",
+		env.String("URL_CHART_INSPECTOR", "http://bff.krateo-system.svc.cluster.local:8081/api-info/chart"), "url chart inspector")
+	saName := flag.String("saName",
+		env.String("COMPOSITION_CONTROLLER_SA_NAME", ""), "service account name")
+	saNamespace := flag.String("saNamespace",
+		env.String("COMPOSITION_CONTROLLER_SA_NAMESPACE", ""), "service account namespace")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -103,14 +107,13 @@ func main() {
 	if len(*chart) > 0 {
 		pig = archive.Static(*chart)
 	} else {
-		pig, err = archive.Dynamic(cfg, *debug, log)
+		pig, err = archive.Dynamic(cfg, log)
 		if err != nil {
 			log.Debug("Creating chart url info getter.", "error", err)
 		}
 	}
 
-	log.WithValues("build", Build).
-		WithValues("debug", *debug).
+	log.WithValues("debug", *debug).
 		WithValues("resyncInterval", *resyncInterval).
 		WithValues("group", *resourceGroup).
 		WithValues("version", *resourceVersion).
@@ -125,7 +128,9 @@ func main() {
 	labelselector := labels.NewSelector().Add(*labelreq)
 
 	pluralizer := pluralizer.New(urlplurals, http.DefaultClient)
-	handler := composition.NewHandler(cfg, log, pig, rec, dyn, cachedDisc, *pluralizer)
+	chartInspector := chartinspector.NewChartInspector(*urlChartInspector)
+	rbacgen := rbacgen.NewRBACGen(*saName, *saNamespace, &chartInspector)
+	handler := composition.NewHandler(cfg, log, pig, rec, dyn, cachedDisc, *pluralizer, rbacgen)
 
 	controller := genctrl.New(genctrl.Options{
 		Discovery:      cachedDisc,

@@ -13,9 +13,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
+
+type CompositionDefinitionInfo struct {
+	UID       types.UID
+	Namespace string
+}
 
 type Info struct {
 	// URL of the helm chart package that is being requested.
@@ -29,6 +35,9 @@ type Info struct {
 
 	// RegistryAuth is the credentials to access the registry.
 	RegistryAuth *helmclient.RegistryAuth `json:"registryAuth,omitempty"`
+
+	// CompositionDefinitionInfo is the information about the composition definition.
+	CompositionDefinitionInfo *CompositionDefinitionInfo `json:"compositionDefinitionInfo,omitempty"`
 }
 
 func (i *Info) IsOCI() bool {
@@ -51,17 +60,11 @@ func Static(chart string) Getter {
 	return staticGetter{chartName: chart}
 }
 
-func Dynamic(cfg *rest.Config, verbose bool, log logging.Logger) (Getter, error) {
+func Dynamic(cfg *rest.Config, log logging.Logger) (Getter, error) {
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-
-	// if verbose {
-	// 	log.SetOutput(os.Stderr)
-	// } else {
-	// 	log.SetOutput(io.Discard)
-	// }
 
 	return &dynamicGetter{
 		dynamicClient: dyn,
@@ -133,8 +136,18 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 				g.logger.Debug("Invalid format for 'status.apiVersion'", "name", el.GetName(), "namespace", el.GetNamespace())
 				continue
 			}
+			kind, ok, err := unstructured.NestedString(el.UnstructuredContent(), "status", "kind")
+			if err != nil {
+				g.logger.Debug("Failed to resolve 'status.kind'", "error", err.Error(), "name", el.GetName(), "namespace", el.GetNamespace())
+				continue
+			}
+			if !ok {
+				g.logger.Debug("Failed to resolve 'status.kind'", "name", el.GetName(), "namespace", el.GetNamespace())
+				continue
+			}
+
 			version := versionSplit[1]
-			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] {
+			if version == uns.GetLabels()[listwatcher.CompositionVersionLabel] && kind == uns.GetKind() {
 				compositionDefinition = el
 				found = true
 				break
@@ -206,6 +219,10 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			Username:              username,
 			Password:              password,
 			InsecureSkipTLSverify: insecureSkipTLSverify,
+		},
+		CompositionDefinitionInfo: &CompositionDefinitionInfo{
+			UID:       compositionDefinition.GetUID(),
+			Namespace: compositionDefinition.GetNamespace(),
 		},
 	}, nil
 }
