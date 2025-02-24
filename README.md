@@ -45,6 +45,21 @@ These enviroment varibles can be changed in the Deployment of the composition-dy
 | COMPOSITION_CONTROLLER_GROUP           | resource api group         |               |
 | COMPOSITION_CONTROLLER_VERSION         | resource api version       |               |
 | COMPOSITION_CONTROLLER_RESOURCE        | resource plural name       |               |
+| COMPOSITION_CONTROLLER_SA_NAME         | cdc deployment ServiceAccount name |  |
+| COMPOSITION_CONTROLLER_SA_NAMESPACE        | cdc deployment ServiceAccount namespace |  |
 | URL_PLURALS                            | url to krateo pluraliser service       |  http://bff.krateo-system.svc.cluster.local:8081/api-info/names             |   
+| URL_CHART_INSPECTOR                    | url to chart inspector   |  http://chart-inspector.krateo-system.svc.cluster.local:8081/             |   
 | KRATEO_NAMESPACE                       | namespace where krateo is installed       |  krateo-system |
 | HELM_REGISTRY_CONFIG_PATH | default helm config path | /tmp |
+| HELM_MAX_HISTORY | Max Helm History | 10 |
+
+
+
+
+
+	urlChartInspector := flag.String("urlChartInspector",
+		env.String("URL_CHART_INSPECTOR", "http://bff.krateo-system.svc.cluster.local:8081/api-info/chart"), "url chart inspector")
+	saName := flag.String("saName",
+		env.String("COMPOSITION_CONTROLLER_SA_NAME", ""), "service account name")
+	saNamespace := flag.String("saNamespace",
+		env.String("COMPOSITION_CONTROLLER_SA_NAMESPACE", ""), "service account namespace")

@@ -37,6 +37,7 @@ var (
 	helmRegistryConfigPath = env.String("HELM_REGISTRY_CONFIG_PATH", helmclient.DefaultRegistryConfigPath)
 	krateoNamespace        = env.String("KRATEO_NAMESPACE", "krateo-system")
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
+	helmMaxHistory         = env.Int(helmMaxHistoryEnvvar, 10)
 )
 
 const (
@@ -48,6 +49,7 @@ const (
 	reasonInstalled = "CompositionInstalled"
 
 	helmRegistryConfigPathEnvVar = "HELM_REGISTRY_CONFIG_PATH"
+	helmMaxHistoryEnvvar         = "HELM_MAX_HISTORY"
 )
 
 const (
@@ -313,6 +315,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		Repo:            pkg.Repo,
 		Version:         pkg.Version,
 		KrateoNamespace: krateoNamespace,
+		MaxHistory:      helmMaxHistory,
 	}
 	if pkg.RegistryAuth != nil {
 		opts.Credentials = &helmchart.Credentials{
@@ -434,6 +437,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		Repo:            pkg.Repo,
 		Version:         pkg.Version,
 		KrateoNamespace: krateoNamespace,
+		MaxHistory:      helmMaxHistory,
 	}
 	if pkg.RegistryAuth != nil {
 		opts.Credentials = &helmchart.Credentials{
