@@ -110,7 +110,7 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	g.logger.Debug("Found composition definitions", "count", len(all.Items), "type", gvrForDefinitions.String())
+	g.logger.Debug("Found compositiondefinitions", "count", len(all.Items), "type", gvrForDefinitions.String())
 
 	tot := len(all.Items)
 	if tot == 0 {

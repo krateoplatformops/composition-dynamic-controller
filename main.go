@@ -59,7 +59,7 @@ func main() {
 	urlplurals := flag.String("urlplurals",
 		env.String("URL_PLURALS", "http://bff.krateo-system.svc.cluster.local:8081/api-info/names"), "url plurals")
 	urlChartInspector := flag.String("urlChartInspector",
-		env.String("URL_CHART_INSPECTOR", "http://bff.krateo-system.svc.cluster.local:8081/api-info/chart"), "url chart inspector")
+		env.String("URL_CHART_INSPECTOR", "http://chart-inspector.krateo-system.svc.cluster.local:8081/"), "url chart inspector")
 	saName := flag.String("saName",
 		env.String("COMPOSITION_CONTROLLER_SA_NAME", ""), "service account name")
 	saNamespace := flag.String("saNamespace",

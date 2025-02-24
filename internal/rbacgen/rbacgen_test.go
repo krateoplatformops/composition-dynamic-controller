@@ -49,28 +49,28 @@ func TestRBACGen_Generate(t *testing.T) {
 			},
 		}
 		expectedPolicy.ClusterRole.Rules = append(expectedPolicy.ClusterRole.Rules, rbacv1.PolicyRule{
-			APIGroups:     []string{"group1"},
-			Resources:     []string{"resource1"},
-			Verbs:         []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			ResourceNames: []string{"name1"},
+			APIGroups: []string{"group1"},
+			Resources: []string{"resource1"},
+			Verbs:     []string{"*"},
+			// ResourceNames: []string{"name1"},
 		})
 		expectedPolicy.Namespaced["namespace1"].Role.Rules = append(expectedPolicy.Namespaced["namespace1"].Role.Rules, rbacv1.PolicyRule{
-			APIGroups:     []string{"group2"},
-			Resources:     []string{"resource2"},
-			Verbs:         []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			ResourceNames: []string{"name2"},
+			APIGroups: []string{"group2"},
+			Resources: []string{"resource2"},
+			Verbs:     []string{"*"},
+			// ResourceNames: []string{"name2"},
 		})
 		expectedPolicy.ClusterRole.Rules = append(expectedPolicy.ClusterRole.Rules, rbacv1.PolicyRule{
-			APIGroups:     []string{""},
-			Resources:     []string{"resource3"},
-			Verbs:         []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			ResourceNames: []string{"name3"},
+			APIGroups: []string{""},
+			Resources: []string{"resource3"},
+			Verbs:     []string{"*"},
+			// ResourceNames: []string{"name3"},
 		})
 		expectedPolicy.Namespaced["namespace1"].Role.Rules = append(expectedPolicy.Namespaced["namespace1"].Role.Rules, rbacv1.PolicyRule{
-			APIGroups:     []string{""},
-			Resources:     []string{"resource4"},
-			Verbs:         []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			ResourceNames: []string{"name4"},
+			APIGroups: []string{""},
+			Resources: []string{"resource4"},
+			Verbs:     []string{"*"},
+			// ResourceNames: []string{"name4"},
 		})
 
 		policy, err := rbacGen.Generate("compDefUID", "compDefNS", "compUID", "compNS")

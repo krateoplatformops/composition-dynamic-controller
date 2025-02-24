@@ -227,3 +227,97 @@ func (i *RBACInstaller) ApplyClusterRoleBinding(ctx context.Context, clusterRole
 
 	return clusterRoleBinding, nil
 }
+
+func (i *RBACInstaller) UninstallRBAC(rbac *RBAC) error {
+	if rbac.ClusterRole != nil {
+		err := i.DeleteClusterRole(context.Background(), rbac.ClusterRole.Name)
+		if err != nil {
+			return fmt.Errorf("failed to Delete ClusterRole: %w", err)
+		}
+	}
+	if rbac.ClusterRoleBinding != nil {
+		err := i.DeleteClusterRoleBinding(context.Background(), rbac.ClusterRoleBinding.Name)
+		if err != nil {
+			return fmt.Errorf("failed to Delete ClusterRoleBinding: %w", err)
+		}
+	}
+	for _, ns := range rbac.Namespaced {
+		if ns.Role != nil {
+			err := i.DeleteRole(context.Background(), ns.Role.Namespace, ns.Role.Name)
+			if err != nil {
+				return fmt.Errorf("failed to Delete Role: %w", err)
+			}
+		}
+		if ns.RoleBinding != nil {
+			err := i.DeleteRoleBinding(context.Background(), ns.RoleBinding.Namespace, ns.RoleBinding.Name)
+			if err != nil {
+				return fmt.Errorf("failed to Delete RoleBinding: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (i *RBACInstaller) DeleteRole(ctx context.Context, namespace, name string) error {
+	cli := i.DynamicClient.Resource(
+		schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "roles",
+		},
+	).Namespace(namespace)
+
+	err := cli.Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to Delete Role: %w", err)
+	}
+	return nil
+}
+
+func (i *RBACInstaller) DeleteRoleBinding(ctx context.Context, namespace, name string) error {
+	cli := i.DynamicClient.Resource(
+		schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "rolebindings",
+		},
+	).Namespace(namespace)
+
+	err := cli.Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to Delete RoleBinding: %w", err)
+	}
+	return nil
+}
+
+func (i *RBACInstaller) DeleteClusterRole(ctx context.Context, name string) error {
+	cli := i.DynamicClient.Resource(
+		schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "clusterroles",
+		},
+	)
+
+	err := cli.Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to Delete ClusterRole: %w", err)
+	}
+	return nil
+}
+
+func (i *RBACInstaller) DeleteClusterRoleBinding(ctx context.Context, name string) error {
+	cli := i.DynamicClient.Resource(
+		schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "clusterrolebindings",
+		},
+	)
+
+	err := cli.Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to Delete ClusterRoleBinding: %w", err)
+	}
+	return nil
+}
