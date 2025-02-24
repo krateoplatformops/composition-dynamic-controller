@@ -37,6 +37,7 @@ var (
 	helmRegistryConfigPath = env.String("HELM_REGISTRY_CONFIG_PATH", helmclient.DefaultRegistryConfigPath)
 	krateoNamespace        = env.String("KRATEO_NAMESPACE", "krateo-system")
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
+	helmMaxHistory         = env.Int(helmMaxHistoryEnvvar, 10)
 )
 
 const (
@@ -48,6 +49,7 @@ const (
 	reasonInstalled = "CompositionInstalled"
 
 	helmRegistryConfigPathEnvVar = "HELM_REGISTRY_CONFIG_PATH"
+	helmMaxHistoryEnvvar         = "HELM_MAX_HISTORY"
 )
 
 const (
@@ -136,6 +138,21 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			log.Debug("Setting meta create succeeded annotation.", "error", err)
 			return controller.ExternalObservation{}, err
 		}
+	}
+
+	// Get Resources and generate RBAC
+	generated, err := h.rbacgen.
+		WithBaseName(meta.GetReleaseName(mg)).
+		Generate(string(pkg.CompositionDefinitionInfo.UID), pkg.CompositionDefinitionInfo.Namespace, string(mg.GetUID()), mg.GetNamespace())
+	if err != nil {
+		log.Debug("Generating RBAC", "error", err)
+		return controller.ExternalObservation{}, err
+	}
+	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	err = rbInstaller.ApplyRBAC(generated)
+	if err != nil {
+		log.Debug("Installing RBAC", "error", err)
+		return controller.ExternalObservation{}, err
 	}
 
 	renderOpts := helmchart.RenderTemplateOptions{
@@ -277,6 +294,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	err = rbInstaller.ApplyRBAC(generated)
 	if err != nil {
 		log.Debug("Installing RBAC", "error", err)
+		return err
 	}
 
 	// Install the helm chart
@@ -297,6 +315,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		Repo:            pkg.Repo,
 		Version:         pkg.Version,
 		KrateoNamespace: krateoNamespace,
+		MaxHistory:      helmMaxHistory,
 	}
 	if pkg.RegistryAuth != nil {
 		opts.Credentials = &helmchart.Credentials{
@@ -397,6 +416,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	err = rbInstaller.ApplyRBAC(generated)
 	if err != nil {
 		log.Debug("Installing RBAC", "error", err)
+		return err
 	}
 
 	// Update the helm chart
@@ -417,6 +437,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		Repo:            pkg.Repo,
 		Version:         pkg.Version,
 		KrateoNamespace: krateoNamespace,
+		MaxHistory:      helmMaxHistory,
 	}
 	if pkg.RegistryAuth != nil {
 		opts.Credentials = &helmchart.Credentials{
@@ -521,6 +542,33 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	err = hc.UninstallRelease(&chartSpec)
 	if err != nil {
 		log.Debug("Uninstalling helm chart", "error", err)
+	}
+
+	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
+	if err != nil {
+		if !errors.Is(err, errReleaseNotFound) {
+			return err
+		}
+	}
+	if rel != nil {
+		log.Debug("Composition not deleted.")
+		return fmt.Errorf("composition not deleted, release %s still exists", meta.GetReleaseName(mg))
+	}
+
+	log.Debug("Uninstalling RBAC", "package", pkg.URL)
+
+	// Get Resources and delete RBAC
+	generated, err := h.rbacgen.
+		WithBaseName(meta.GetReleaseName(mg)).
+		Generate(string(pkg.CompositionDefinitionInfo.UID), pkg.CompositionDefinitionInfo.Namespace, string(mg.GetUID()), mg.GetNamespace())
+	if err != nil {
+		log.Debug("Generating RBAC", "error", err)
+		return err
+	}
+	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	err = rbInstaller.UninstallRBAC(generated)
+	if err != nil {
+		log.Debug("Uninstalling RBAC", "error", err)
 		return err
 	}
 

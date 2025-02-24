@@ -51,10 +51,10 @@ func (r *RBACGen) Generate(compositionDefinitionUID, compositionDefinitionNamesp
 	for _, resource := range resources {
 		if resource.Namespace == "" {
 			policy.ClusterRole.Rules = append(policy.ClusterRole.Rules, rbacv1.PolicyRule{
-				APIGroups:     []string{resource.Group},
-				Resources:     []string{resource.Resource},
-				Verbs:         []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-				ResourceNames: []string{resource.Name},
+				APIGroups: []string{resource.Group},
+				Resources: []string{resource.Resource},
+				Verbs:     []string{"*"},
+				// ResourceNames: []string{resource.Name},
 			})
 		} else {
 			if _, ok := policy.Namespaced[resource.Namespace]; !ok {
@@ -65,13 +65,12 @@ func (r *RBACGen) Generate(compositionDefinitionUID, compositionDefinitionNamesp
 			}
 
 			policy.Namespaced[resource.Namespace].Role.Rules = append(policy.Namespaced[resource.Namespace].Role.Rules, rbacv1.PolicyRule{
-				APIGroups:     []string{resource.Group},
-				Resources:     []string{resource.Resource},
-				Verbs:         []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-				ResourceNames: []string{resource.Name},
+				APIGroups: []string{resource.Group},
+				Resources: []string{resource.Resource},
+				Verbs:     []string{"*"},
+				// ResourceNames: []string{resource.Name},
 			})
 		}
 	}
-
 	return ptr.To(policy), nil
 }

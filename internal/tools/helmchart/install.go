@@ -24,6 +24,7 @@ type InstallOptions struct {
 	Version         string
 	Credentials     *Credentials
 	KrateoNamespace string
+	MaxHistory      int
 }
 
 func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64, error) {
@@ -36,6 +37,7 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 		CreateNamespace: true,
 		UpgradeCRDs:     true,
 		Wait:            true,
+		MaxHistory:      opts.MaxHistory,
 	}
 	if opts.Credentials != nil {
 		chartSpec.Username = opts.Credentials.Username

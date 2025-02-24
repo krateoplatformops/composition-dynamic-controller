@@ -18,6 +18,7 @@ type UpdateOptions struct {
 	Repo            string
 	Credentials     *Credentials
 	KrateoNamespace string
+	MaxHistory      int
 }
 
 func Update(ctx context.Context, opts UpdateOptions) error {
@@ -32,6 +33,7 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 		Replace:         true,
 		CleanupOnFail:   true,
 		Install:         true,
+		MaxHistory:      opts.MaxHistory,
 	}
 	if opts.Credentials != nil {
 		chartSpec.Username = opts.Credentials.Username

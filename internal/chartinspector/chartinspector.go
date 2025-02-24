@@ -57,10 +57,15 @@ func (c *ChartInspector) Resources(compositionDefinitionUID, compositionDefiniti
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("getting urlplurals: %w", err)
+		return nil, fmt.Errorf("getting chartinspector: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		bbody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("reading response body: %w", err)
+		}
+
+		return nil, fmt.Errorf("unexpected status code: %d - response body: %s", resp.StatusCode, string(bbody))
 	}
 
 	defer resp.Body.Close()
