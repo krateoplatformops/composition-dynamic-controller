@@ -627,3 +627,286 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 
 	testenv.Test(t, f)
 }
+
+func TestUninstallRole(t *testing.T) {
+	f := features.New("Uninstall").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Uninstall", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dyn := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		installer := &RBACInstaller{DynamicClient: dyn}
+
+		role := &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-role",
+				Namespace: "default",
+			},
+		}
+
+		// Apply the role first
+		_, err := installer.ApplyRole(context.Background(), role)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Uninstall the role
+		err = installer.DeleteRole(context.Background(), role.Namespace, role.Name)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Verify the role is deleted
+		_, err = installer.ApplyRole(context.Background(), role)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
+}
+
+func TestUninstallClusterRole(t *testing.T) {
+	f := features.New("Uninstall").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Uninstall", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dyn := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		installer := &RBACInstaller{DynamicClient: dyn}
+
+		clusterRole := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-clusterrole",
+			},
+		}
+
+		// Apply the cluster role first
+		_, err := installer.ApplyClusterRole(context.Background(), clusterRole)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Uninstall the cluster role
+		err = installer.DeleteClusterRole(context.Background(), clusterRole.Name)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Verify the cluster role is deleted
+		_, err = installer.ApplyClusterRole(context.Background(), clusterRole)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
+}
+
+func TestUninstallClusterRoleBinding(t *testing.T) {
+	f := features.New("Uninstall").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Uninstall", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dyn := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		installer := &RBACInstaller{DynamicClient: dyn}
+
+		clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-clusterrolebinding",
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "ClusterRole",
+				Name:     "test-clusterrole",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "User",
+					Name:      "test-user",
+					Namespace: "default",
+				},
+			},
+		}
+
+		// Apply the cluster role binding first
+		_, err := installer.ApplyClusterRoleBinding(context.Background(), clusterRoleBinding)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Uninstall the cluster role binding
+		err = installer.DeleteClusterRoleBinding(context.Background(), clusterRoleBinding.Name)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Verify the cluster role binding is deleted
+		_, err = installer.ApplyClusterRoleBinding(context.Background(), clusterRoleBinding)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
+}
+
+func TestUninstallRoleBinding(t *testing.T) {
+	f := features.New("Uninstall").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Uninstall", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dyn := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		installer := &RBACInstaller{DynamicClient: dyn}
+
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-rolebinding",
+				Namespace: "default",
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "Role",
+				Name:     "test-role",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "User",
+					Name:      "test-user",
+					Namespace: "default",
+				},
+			},
+		}
+
+		// Apply the role binding first
+		_, err := installer.ApplyRoleBinding(context.Background(), roleBinding)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Uninstall the role binding
+		err = installer.DeleteRoleBinding(context.Background(), roleBinding.Namespace, roleBinding.Name)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Verify the role binding is deleted
+		_, err = installer.ApplyRoleBinding(context.Background(), roleBinding)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
+}
+
+func TestUninstallRBAC(t *testing.T) {
+	f := features.New("Uninstall").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Uninstall", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dyn := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		installer := &RBACInstaller{DynamicClient: dyn}
+
+		rbac := &RBAC{
+			ClusterRole: &rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-clusterrole",
+				},
+			},
+			ClusterRoleBinding: &rbacv1.ClusterRoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-clusterrolebinding",
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: "rbac.authorization.k8s.io",
+					Kind:     "ClusterRole",
+					Name:     "test-clusterrole",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind: "User",
+						Name: "test-user",
+					},
+				},
+			},
+			Namespaced: map[string]Namespaced{
+				"default": {
+					Role: &rbacv1.Role{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-role",
+							Namespace: "default",
+						},
+					},
+					RoleBinding: &rbacv1.RoleBinding{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-rolebinding",
+							Namespace: "default",
+						},
+						RoleRef: rbacv1.RoleRef{
+							APIGroup: "rbac.authorization.k8s.io",
+							Kind:     "Role",
+							Name:     "test-role",
+						},
+						Subjects: []rbacv1.Subject{
+							{
+								Kind:      "User",
+								Name:      "test-user",
+								Namespace: "default",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		// Apply the RBAC first
+		err := installer.ApplyRBAC(rbac)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Uninstall the RBAC
+		err = installer.UninstallRBAC(rbac)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Verify the RBAC is deleted
+		_, err = installer.ApplyClusterRole(context.Background(), rbac.ClusterRole)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+
+		_, err = installer.ApplyClusterRoleBinding(context.Background(), rbac.ClusterRoleBinding)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+
+		_, err = installer.ApplyRole(context.Background(), rbac.Namespaced["default"].Role)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+
+		_, err = installer.ApplyRoleBinding(context.Background(), rbac.Namespaced["default"].RoleBinding)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
+}
