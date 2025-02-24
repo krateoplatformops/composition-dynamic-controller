@@ -95,7 +95,7 @@ func TestMain(m *testing.M) {
 				return ctx, err
 			}
 
-			time.Sleep(40 * time.Second)
+			time.Sleep(2 * time.Minute)
 
 			return ctx, nil
 		},
