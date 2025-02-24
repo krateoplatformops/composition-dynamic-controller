@@ -6,20 +6,21 @@ package composition
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
+	rbacv1 "k8s.io/api/rbac/v1"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-
-	corev1 "k8s.io/api/core/v1"
 
 	"github.com/gobuffalo/flect"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/chartinspector"
@@ -33,7 +34,6 @@ import (
 
 	"github.com/krateoplatformops/snowplow/plumbing/e2e"
 	xenv "github.com/krateoplatformops/snowplow/plumbing/env"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	memory "k8s.io/client-go/discovery/cached"
@@ -48,7 +48,6 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/envfuncs"
 	"sigs.k8s.io/e2e-framework/pkg/features"
-	"sigs.k8s.io/e2e-framework/pkg/utils"
 	"sigs.k8s.io/e2e-framework/support/kind"
 )
 
@@ -75,33 +74,28 @@ const (
 	manifestsPath     = "../../manifests"
 	namespace         = "demo-system"
 	altNamespace      = "krateo-system"
-	chartInspectorUrl = "http://localhost:8081"
+	chartInspectorUrl = "http://localhost:30007"
 )
 
 func TestMain(m *testing.M) {
 	xenv.SetTestMode(true)
 
-	clusterName = "krateo"
+	clusterName = "kind"
 	testenv = env.New()
 
 	testenv.Setup(
-		envfuncs.CreateCluster(kind.NewProvider(), clusterName),
+		// envfuncs.CreateCluster(kind.NewProvider().WithPath(filepath.Join(manifestsPath, "kind.yaml")), clusterName),
+		envfuncs.CreateClusterWithConfig(kind.NewProvider(), clusterName, filepath.Join(manifestsPath, "kind.yaml")),
 		e2e.CreateNamespace(namespace),
 		e2e.CreateNamespace(altNamespace),
-		// envfuncs.CreateClusterWithConfig(kind.NewProvider(), clusterName, filepath.Join(manifestsPath, "manifests", "kind.yaml")),
 
 		func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
-			err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "*.yaml", nil)
+			err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "chart-inspector-deployment.yaml", nil)
 			if err != nil {
 				return ctx, err
 			}
 
-			time.Sleep(10 * time.Second)
-			go utils.RunCommandWithSeperatedOutput(
-				fmt.Sprintf("kubectl port-forward service/chart-inspector-service -n demo-system 8081:8081"),
-				io.Discard,
-				io.Discard,
-			)
+			time.Sleep(20 * time.Second)
 
 			return ctx, nil
 		},
@@ -114,7 +108,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestController(t *testing.T) {
-
 	var handler controller.ExternalClient
 	// var labelselector labels.Selector
 	var c *rest.Config
