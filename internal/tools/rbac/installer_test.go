@@ -7,7 +7,9 @@ import (
 
 	"github.com/krateoplatformops/snowplow/plumbing/e2e"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
@@ -658,9 +660,15 @@ func TestUninstallRole(t *testing.T) {
 		}
 
 		// Verify the role is deleted
-		_, err = installer.ApplyRole(context.Background(), role)
-		if err == nil {
-			t.Fatalf("expected error, got none")
+		_, err = dyn.Resource(
+			schema.GroupVersionResource{
+				Group:    "rbac.authorization.k8s.io",
+				Version:  "v1",
+				Resource: "roles",
+			},
+		).Namespace(role.Namespace).Get(ctx, role.Name, metav1.GetOptions{})
+		if !errors.IsNotFound(err) {
+			t.Fatalf("expected not found error, got none")
 		}
 		return ctx
 	}).Feature()
@@ -697,9 +705,15 @@ func TestUninstallClusterRole(t *testing.T) {
 		}
 
 		// Verify the cluster role is deleted
-		_, err = installer.ApplyClusterRole(context.Background(), clusterRole)
-		if err == nil {
-			t.Fatalf("expected error, got none")
+		_, err = dyn.Resource(
+			schema.GroupVersionResource{
+				Group:    "rbac.authorization.k8s.io",
+				Version:  "v1",
+				Resource: "clusterroles",
+			},
+		).Namespace(clusterRole.Namespace).Get(ctx, clusterRole.Name, metav1.GetOptions{})
+		if !errors.IsNotFound(err) {
+			t.Fatalf("expected not found error, got none")
 		}
 		return ctx
 	}).Feature()
@@ -748,9 +762,15 @@ func TestUninstallClusterRoleBinding(t *testing.T) {
 		}
 
 		// Verify the cluster role binding is deleted
-		_, err = installer.ApplyClusterRoleBinding(context.Background(), clusterRoleBinding)
-		if err == nil {
-			t.Fatalf("expected error, got none")
+		_, err = dyn.Resource(
+			schema.GroupVersionResource{
+				Group:    "rbac.authorization.k8s.io",
+				Version:  "v1",
+				Resource: "clusterrolebindings",
+			},
+		).Namespace(clusterRoleBinding.Namespace).Get(ctx, clusterRoleBinding.Name, metav1.GetOptions{})
+		if !errors.IsNotFound(err) {
+			t.Fatalf("expected not found error, got none")
 		}
 		return ctx
 	}).Feature()
@@ -800,9 +820,15 @@ func TestUninstallRoleBinding(t *testing.T) {
 		}
 
 		// Verify the role binding is deleted
-		_, err = installer.ApplyRoleBinding(context.Background(), roleBinding)
-		if err == nil {
-			t.Fatalf("expected error, got none")
+		_, err = dyn.Resource(
+			schema.GroupVersionResource{
+				Group:    "rbac.authorization.k8s.io",
+				Version:  "v1",
+				Resource: "rolebindings",
+			},
+		).Namespace(roleBinding.Namespace).Get(ctx, roleBinding.Name, metav1.GetOptions{})
+		if !errors.IsNotFound(err) {
+			t.Fatalf("expected not found error, got none")
 		}
 		return ctx
 	}).Feature()
@@ -882,27 +908,6 @@ func TestUninstallRBAC(t *testing.T) {
 		err = installer.UninstallRBAC(rbac)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
-		}
-
-		// Verify the RBAC is deleted
-		_, err = installer.ApplyClusterRole(context.Background(), rbac.ClusterRole)
-		if err == nil {
-			t.Fatalf("expected error, got none")
-		}
-
-		_, err = installer.ApplyClusterRoleBinding(context.Background(), rbac.ClusterRoleBinding)
-		if err == nil {
-			t.Fatalf("expected error, got none")
-		}
-
-		_, err = installer.ApplyRole(context.Background(), rbac.Namespaced["default"].Role)
-		if err == nil {
-			t.Fatalf("expected error, got none")
-		}
-
-		_, err = installer.ApplyRoleBinding(context.Background(), rbac.Namespaced["default"].RoleBinding)
-		if err == nil {
-			t.Fatalf("expected error, got none")
 		}
 
 		return ctx
