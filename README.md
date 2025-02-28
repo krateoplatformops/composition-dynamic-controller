@@ -4,10 +4,16 @@ The composition-dynamic-controller is an operator that is instantiated by the [c
 ## Summary
 
 - [Summary](#summary)
+- [Architecture](#architecture)
 - [Overview](#overview)
 - [Examples](#examples)
 - [Configuration](#configuration)
   
+
+## Architecture
+
+![composition-dynamic-controller architecture](_diagrams/architecture.png "composition-dynamic-controller Architecture")
+
 
 ## Overview
 
@@ -15,7 +21,13 @@ The composition-dynamic-controller is an operator designed to manage the lifecyc
 
 In practice, when a Custom Resource (CR) is created, the instance of composition-dynamic-controller enabled to manage this specific Group Version Kind (GVK), checks if a Helm release associated with the CR already exists in the cluster. If not, it performs an `helm install` using the values specified in the CR to create a new release. However, if the release does already exist, it instead executes an `helm upgrade`, updating the release's values with those specified in the CR. Additionally, when the CR is deleted from the cluster, the instance of the composition-dynamic-controller performs an `helm uninstall` on the release.
 
-The status of the composition definition is True if the resources contained in the chart with conditions have a positive type equal to True (positive types are "ready", "complete", "healthy", "active", "able").
+The status of the composition is True if the realease has been correctly installed.
+
+### RBAC Generation
+
+Starting from release `0.16.0`, the `composition-dynamic-controller` automatically generates its own RBAC (Role-Based Access Control) policy. Prior to this, RBAC configurations needed to be manually defined. The controller leverages `chart-inspector` to obtain a list of the resources involved in the chart installation. Based on this information, the `composition-dynamic-controller` dynamically creates the necessary RBAC policy, ensuring that the appropriate roles and permissions are granted for managing the Helm chart resources.
+
+This automatic RBAC generation simplifies deployment and ensures that the `composition-dynamic-controller` has the required permissions to perform operations like `helm install`, `helm upgrade`, and `helm uninstall`, depending on the status of the associated Custom Resource (CR). The dynamic creation of RBAC policies eliminates the need for manual intervention, streamlining the operational workflow and ensuring a more seamless experience when managing resources with `composition-dynamic-controller`.
 
 ## Examples
 
