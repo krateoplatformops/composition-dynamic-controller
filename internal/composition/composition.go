@@ -206,16 +206,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}, nil
 	}
 
-	setManagedResources(mg, managed)
-
-	unstructured.SetNestedField(mg.Object, pkg.Version, "status", "helmChartVersion")
-	unstructured.SetNestedField(mg.Object, pkg.URL, "status", "helmChartUrl")
-	err = unstructuredtools.SetCondition(mg, condition.Available())
+	err = setAvaibleStatus(mg, pkg, "Composition up-to-date")
 	if err != nil {
-		log.Debug("Setting condition", "error", err)
+		log.Debug("Setting available status", "error", err)
 		return controller.ExternalObservation{}, err
 	}
-
 	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
@@ -361,9 +356,14 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 	setManagedResources(mg, managed)
+	h.logger.Debug("Composition created.", "package", pkg.URL)
 
-	unstructuredtools.SetCondition(mg, condition.Available())
 	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonCreated, "Created composition: %s", mg.GetName())
+	err = setAvaibleStatus(mg, pkg, "Composition created")
+	if err != nil {
+		log.Debug("Setting available status", "error", err)
+		return err
+	}
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
@@ -446,7 +446,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		}
 	}
 
-	err = helmchart.Update(ctx, opts)
+	rel, err := helmchart.Update(ctx, opts)
 	if err != nil {
 		log.Debug("Performing helm chart update", "error", err)
 		return err
@@ -462,28 +462,10 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	// Update the composition values in the status.
-	renderOpts := helmchart.RenderTemplateOptions{
-		Pluralizer:     h.pluralizer,
-		HelmClient:     hc,
-		Resource:       mg,
-		PackageUrl:     pkg.URL,
-		PackageVersion: pkg.Version,
-		Repo:           pkg.Repo,
-	}
-	if pkg.RegistryAuth != nil {
-		renderOpts.Credentials = &helmchart.Credentials{
-			Username: pkg.RegistryAuth.Username,
-			Password: pkg.RegistryAuth.Password,
-		}
-	}
-	_, all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace())
 	if err != nil {
-		log.Debug("Rendering helm chart template", "error", err)
-		return fmt.Errorf("rendering helm chart template: %w", err)
-	}
-	if len(all) == 0 {
-		return nil
+		log.Debug("Getting resources from release", "error", err)
+		return fmt.Errorf("getting resources from release: %w", err)
 	}
 
 	managed, err := populateManagedResources(h.pluralizer, all)
@@ -494,12 +476,13 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	setManagedResources(mg, managed)
 
 	log.Debug("Composition values updated.", "package", pkg.URL)
+
 	h.eventRecorder.Eventf(mg, eventTypeNormal, reasonUpdated, "Updated composition: %s", mg.GetName())
-
-	cond := condition.Creating()
-	cond.Message = "Composition values updated."
-	unstructuredtools.SetCondition(mg, cond)
-
+	err = setAvaibleStatus(mg, pkg, "Composition values updated.")
+	if err != nil {
+		log.Debug("Setting available status", "error", err)
+		return err
+	}
 	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,

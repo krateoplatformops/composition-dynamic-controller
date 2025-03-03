@@ -6,6 +6,7 @@ import (
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/meta"
+	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -21,7 +22,7 @@ type UpdateOptions struct {
 	MaxHistory      int
 }
 
-func Update(ctx context.Context, opts UpdateOptions) error {
+func Update(ctx context.Context, opts UpdateOptions) (*release.Release, error) {
 	chartSpec := helmclient.ChartSpec{
 		ReleaseName:     meta.GetReleaseName(opts.Resource),
 		Namespace:       opts.Resource.GetNamespace(),
@@ -42,7 +43,7 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 
 	dat, err := ExtractValuesFromSpec(opts.Resource)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(dat) > 0 {
 		chartSpec.ResetValues = true
@@ -53,39 +54,39 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 
 	gvr, err := opts.Pluralizer.GVKtoGVR(opts.Resource.GetObjectKind().GroupVersionKind())
 	if err != nil {
-		return fmt.Errorf("failed to get GVR: %w", err)
+		return nil, fmt.Errorf("failed to get GVR: %w", err)
 	}
 
 	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetNamespace(), "global", "compositionNamespace")
 	if err != nil {
-		return fmt.Errorf("failed to add compositionNamespace to values: %w", err)
+		return nil, fmt.Errorf("failed to add compositionNamespace to values: %w", err)
 	}
 
 	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetName(), "global", "compositionName")
 	if err != nil {
-		return fmt.Errorf("failed to add compositionName to values: %w", err)
+		return nil, fmt.Errorf("failed to add compositionName to values: %w", err)
 	}
 
 	dat, err = AddOrUpdateFieldInValues(dat, opts.KrateoNamespace, "global", "krateoNamespace")
 	if err != nil {
-		return fmt.Errorf("failed to add krateoNamespace to values: %w", err)
+		return nil, fmt.Errorf("failed to add krateoNamespace to values: %w", err)
 	}
 
 	dat, err = AddOrUpdateFieldInValues(dat, uid, "global", "compositionId")
 	if err != nil {
-		return fmt.Errorf("failed to add compositionId to values: %w", err)
+		return nil, fmt.Errorf("failed to add compositionId to values: %w", err)
 	}
 	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetAPIVersion(), "global", "compositionApiVersion")
 	if err != nil {
-		return fmt.Errorf("failed to add compositionApiVersion to values: %w", err)
+		return nil, fmt.Errorf("failed to add compositionApiVersion to values: %w", err)
 	}
 	dat, err = AddOrUpdateFieldInValues(dat, gvr.Resource, "global", "compositionResource")
 	if err != nil {
-		return fmt.Errorf("failed to add compositionResource to values: %w", err)
+		return nil, fmt.Errorf("failed to add compositionResource to values: %w", err)
 	}
 	dat, err = AddOrUpdateFieldInValues(dat, opts.Resource.GetObjectKind().GroupVersionKind().Kind, "global", "compositionKind")
 	if err != nil {
-		return fmt.Errorf("failed to add compositionKind to values: %w", err)
+		return nil, fmt.Errorf("failed to add compositionKind to values: %w", err)
 	}
 
 	chartSpec.ValuesYaml = string(dat)
@@ -99,6 +100,6 @@ func Update(ctx context.Context, opts UpdateOptions) error {
 		},
 	}
 
-	_, err = opts.HelmClient.UpgradeChart(ctx, &chartSpec, helmOpts)
-	return err
+	rel, err := opts.HelmClient.UpgradeChart(ctx, &chartSpec, helmOpts)
+	return rel, err
 }
