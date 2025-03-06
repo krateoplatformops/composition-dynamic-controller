@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient/tracer"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/rbacgen"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
@@ -68,6 +70,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event 
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 
 	return &handler{
+		kubeconfig:        cfg,
 		rbacgen:           rbacgen,
 		pluralizer:        pluralizer,
 		logger:            log,
@@ -79,6 +82,7 @@ func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event 
 }
 
 type handler struct {
+	kubeconfig        *rest.Config
 	rbacgen           rbacgen.RBACGenInterface
 	logger            logging.Logger
 	pluralizer        pluralizer.PluralizerInterface
@@ -155,51 +159,52 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, err
 	}
 
-	renderOpts := helmchart.RenderTemplateOptions{
-		HelmClient:     hc,
-		Resource:       mg,
-		PackageUrl:     pkg.URL,
-		PackageVersion: pkg.Version,
-		Repo:           pkg.Repo,
+	tracer := &tracer.Tracer{}
+	hc, err = h.helmClientForResourceWithTransportWrapper(mg, pkg.RegistryAuth, func(rt http.RoundTripper) http.RoundTripper {
+		return tracer.WithRoundTripper(rt)
+	})
+	if err != nil {
+		log.Debug("Getting helm client", "error", err)
+		return controller.ExternalObservation{}, err
+	}
+
+	opts := helmchart.UpdateOptions{
+		CheckResourceOptions: helmchart.CheckResourceOptions{
+			DynamicClient: h.dynamicClient,
+			Pluralizer:    h.pluralizer,
+		},
+		HelmClient:      hc,
+		ChartName:       pkg.URL,
+		Resource:        mg,
+		Repo:            pkg.Repo,
+		Version:         pkg.Version,
+		KrateoNamespace: krateoNamespace,
+		MaxHistory:      helmMaxHistory,
 	}
 	if pkg.RegistryAuth != nil {
-		renderOpts.Credentials = &helmchart.Credentials{
+		opts.Credentials = &helmchart.Credentials{
 			Username: pkg.RegistryAuth.Username,
 			Password: pkg.RegistryAuth.Password,
 		}
 	}
 
-	renderedRel, all, err := helmchart.RenderTemplate(ctx, renderOpts)
+	upgradedRel, err := helmchart.Update(ctx, opts)
 	if err != nil {
-		log.Debug("Rendering helm chart template", "error", err)
-		return controller.ExternalObservation{}, fmt.Errorf("rendering helm chart template: %w", err)
+		log.Debug("Performing helm chart update", "error", err)
+		return controller.ExternalObservation{}, err
 	}
-	if len(all) == 0 {
-		return controller.ExternalObservation{}, nil
-	}
-
-	if rel.Chart.Metadata.Version != renderedRel.Chart.Metadata.Version {
-		log.Debug("Composition package version mismatch.", "package", pkg.URL, "installed", rel.Chart.Metadata.Version, "expected", pkg.Version)
+	modifiedResources := tracer.GetResources()
+	if len(modifiedResources) > 0 {
+		for _, resource := range modifiedResources {
+			log.Debug("Composition resource modified", "Name", resource.Name, "Namespace", resource.Namespace, "Group", resource.Group, "Version", resource.Version, "Resource", resource.Resource)
+		}
 		return controller.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: false,
 		}, nil
 	}
-
-	log.Debug("Setting managed array", "package", pkg.URL)
-
-	managed, err := populateManagedResources(h.pluralizer, all)
-	if err != nil {
-		log.Debug("Populating managed resources", "error", err)
-		return controller.ExternalObservation{}, err
-	}
-	ok, err := checkManaged(mg, managed)
-	if err != nil {
-		log.Debug("Checking managed resources", "error", err)
-		return controller.ExternalObservation{}, err
-	}
-	if !ok {
-		log.Debug("Composition resources mismatch")
+	if rel.Chart.Metadata.Version != upgradedRel.Chart.Metadata.Version {
+		log.Debug("Composition package version mismatch.", "package", pkg.URL, "installed", rel.Chart.Metadata.Version, "expected", pkg.Version)
 		return controller.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: false,
@@ -404,21 +409,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	// Get Resources and generate RBAC
-	generated, err := h.rbacgen.
-		WithBaseName(meta.GetReleaseName(mg)).
-		Generate(string(pkg.CompositionDefinitionInfo.UID), pkg.CompositionDefinitionInfo.Namespace, string(mg.GetUID()), mg.GetNamespace())
-	if err != nil {
-		log.Debug("Generating RBAC", "error", err)
-		return err
-	}
-	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
-	err = rbInstaller.ApplyRBAC(generated)
-	if err != nil {
-		log.Debug("Installing RBAC", "error", err)
-		return err
-	}
-
 	// Update the helm chart
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
@@ -426,41 +416,20 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	opts := helmchart.UpdateOptions{
-		CheckResourceOptions: helmchart.CheckResourceOptions{
-			DynamicClient: h.dynamicClient,
-			Pluralizer:    h.pluralizer,
-		},
-		HelmClient:      hc,
-		ChartName:       pkg.URL,
-		Resource:        mg,
-		Repo:            pkg.Repo,
-		Version:         pkg.Version,
-		KrateoNamespace: krateoNamespace,
-		MaxHistory:      helmMaxHistory,
-	}
-	if pkg.RegistryAuth != nil {
-		opts.Credentials = &helmchart.Credentials{
-			Username: pkg.RegistryAuth.Username,
-			Password: pkg.RegistryAuth.Password,
-		}
-	}
-
-	rel, err := helmchart.Update(ctx, opts)
+	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
 	if err != nil {
-		log.Debug("Performing helm chart update", "error", err)
 		return err
 	}
 
-	meta.SetExternalCreatePending(mg, time.Now())
-	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
-		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
-	})
-	if err != nil {
-		log.Debug("Setting meta create pending annotation.", "error", err)
-		return err
-	}
+	// meta.SetExternalCreatePending(mg, time.Now())
+	// mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
+	// 	Pluralizer:    h.pluralizer,
+	// 	DynamicClient: h.dynamicClient,
+	// })
+	// if err != nil {
+	// 	log.Debug("Setting meta create pending annotation.", "error", err)
+	// 	return err
+	// }
 
 	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace())
 	if err != nil {
@@ -588,5 +557,35 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 		RegistryAuth: (registryAuth),
 	}
 
-	return helmclient.New(opts)
+	return helmclient.NewClientFromRestConf(&helmclient.RestConfClientOptions{
+		Options:    opts,
+		RestConfig: h.kubeconfig,
+	})
+}
+
+func (h *handler) helmClientForResourceWithTransportWrapper(mg *unstructured.Unstructured, registryAuth *helmclient.RegistryAuth, transportWrapper func(http.RoundTripper) http.RoundTripper) (helmclient.Client, error) {
+	// log := h.logger.WithValues("apiVersion", mg.GetAPIVersion()).
+	// 	WithValues("kind", mg.GetKind()).
+	// 	WithValues("name", mg.GetName()).
+	// 	WithValues("namespace", mg.GetNamespace())
+
+	opts := &helmclient.Options{
+		Namespace:        mg.GetNamespace(),
+		RepositoryCache:  "/tmp/.helmcache",
+		RepositoryConfig: "/tmp/.helmrepo",
+		RegistryConfig:   helmRegistryConfigFile,
+		Debug:            true,
+		Linting:          false,
+		DebugLog: func(format string, v ...interface{}) {
+			return
+		},
+		RegistryAuth: (registryAuth),
+	}
+
+	h.kubeconfig.WrapTransport = transportWrapper
+
+	return helmclient.NewClientFromRestConf(&helmclient.RestConfClientOptions{
+		Options:    opts,
+		RestConfig: h.kubeconfig,
+	})
 }

@@ -314,6 +314,12 @@ func TestController(t *testing.T) {
 			return ctx
 		}
 
+		managedResources, _, err := unstructured.NestedSlice(u.Object, "status", "managed")
+		if err != nil {
+			t.Error("Setting managed resources.", "error", err)
+			return ctx
+		}
+
 		dyn2 := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
 
 		res, err := dyn2.Resource(schema.GroupVersionResource{
@@ -325,8 +331,6 @@ func TestController(t *testing.T) {
 			t.Error("Getting datapresentationazure.", "error", err)
 			return ctx
 		}
-
-		fmt.Println("Patching datapresentationazure", res.GetName())
 
 		err = r.PatchStatus(ctx, res, k8s.Patch{
 			PatchType: types.MergePatchType,
@@ -382,6 +386,22 @@ func TestController(t *testing.T) {
 		if err != nil {
 			t.Error("Handling observation.", "error", err)
 			return ctx
+		}
+
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Error("Getting composition.", "error", err)
+			return ctx
+		}
+
+		tmpRes, _, err := unstructured.NestedSlice(u.Object, "status", "managed")
+		if err != nil {
+			t.Error("Setting managed resources.", "error", err)
+			return ctx
+		}
+
+		if len(tmpRes) <= len(managedResources) {
+			t.Error("Managed resources not updated.")
 		}
 
 		return ctx
