@@ -1234,6 +1234,7 @@ func mergeUpgradeOptions(chartSpec *ChartSpec, upgradeOptions *action.Upgrade) {
 	upgradeOptions.Atomic = chartSpec.Atomic
 	upgradeOptions.CleanupOnFail = chartSpec.CleanupOnFail
 	upgradeOptions.DryRun = chartSpec.DryRun
+	upgradeOptions.DryRunOption = chartSpec.DryRunOption
 	upgradeOptions.SubNotes = chartSpec.SubNotes
 	upgradeOptions.WaitForJobs = chartSpec.WaitForJobs
 	upgradeOptions.Install = chartSpec.Install

@@ -189,6 +189,9 @@ type ChartSpec struct {
 	// DryRun indicates whether to perform a dry run.
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
+	// DryRunOptions specifies the options for a dry run.
+	// +optional
+	DryRunOption string `json:"dryRunOptions,omitempty"`
 	// Description specifies a custom description for the uninstalled release
 	// +optional
 	Description string `json:"description,omitempty"`
