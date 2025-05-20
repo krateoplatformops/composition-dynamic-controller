@@ -93,8 +93,8 @@ These enviroment varibles can be changed in the Deployment of the composition-dy
 | COMPOSITION_CONTROLLER_VERSION         | resource api version       |               | populated by `core-provider` |
 | COMPOSITION_CONTROLLER_RESOURCE        | resource plural name       |               | populated by `core-provider` |
 | COMPOSITION_CONTROLLER_SA_NAME         | cdc deployment ServiceAccount name |  | populated by `core-provider` |
-| COMPOSITION_CONTROLLER_SA_NAMESPACE        | cdc deployment ServiceAccount namespace | populated by `core-provider` |
-| URL_PLURALS                            | url to krateo pluraliser service       | `http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names`  |   
+| COMPOSITION_CONTROLLER_SA_NAMESPACE        | cdc deployment ServiceAccount namespace | |populated by `core-provider` |
+| URL_PLURALS                            | NOT USED from version 0.17.1 - URL to krateo pluraliser service | `http://snowplow.krateo-system.svc.cluster.local:8081/api-info/names` | Ignored from version 0.17.1 |
 | URL_CHART_INSPECTOR                    | url to chart inspector   |  `http://chart-inspector.krateo-system.svc.cluster.local:8081/`             |   
 | KRATEO_NAMESPACE                       | namespace where krateo is installed       |  krateo-system |
 | HELM_REGISTRY_CONFIG_PATH | default helm config path | /tmp |
