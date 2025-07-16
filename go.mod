@@ -11,10 +11,9 @@ require (
 	github.com/krateoplatformops/plumbing v0.4.0
 	github.com/krateoplatformops/unstructured-runtime v0.1.4
 	github.com/pkg/errors v0.9.1
-	github.com/rs/zerolog v1.33.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.10.0
-	helm.sh/helm/v3 v3.17.3
+	helm.sh/helm/v3 v3.17.4
 	k8s.io/api v0.33.0
 	k8s.io/apiextensions-apiserver v0.32.2
 	k8s.io/apimachinery v0.33.0
