@@ -68,9 +68,11 @@ func main() {
 	saNamespace := flag.String("saNamespace",
 		env.String("COMPOSITION_CONTROLLER_SA_NAMESPACE", ""), "service account namespace")
 	maxErrorRetryInterval := flag.Duration("max-error-retry-interval",
-		env.Duration("COMPOSITION_MAX_ERROR_RETRY_INTERVAL", 60*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the poll interval.")
+		env.Duration("COMPOSITION_CONTROLLER_MAX_ERROR_RETRY_INTERVAL", 60*time.Second), "The maximum interval between retries when an error occurs. This should be less than the half of the poll interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval",
-		env.Duration("COMPOSITION_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
+		env.Duration("COMPOSITION_CONTROLLER_MIN_ERROR_RETRY_INTERVAL", 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
+	metricsServerPort := flag.Int("metrics-server-port",
+		env.Int("COMPOSITION_CONTROLLER_METRICS_SERVER_PORT", 0), "The address to bind the metrics server to. If empty, metrics server is disabled.")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -162,6 +164,15 @@ func main() {
 	rbacgen := rbacgen.NewRBACGen(*saName, *saNamespace, &chartInspector)
 	handler := composition.NewHandler(cfg, log, pig, *event.NewAPIRecorder(rec), dyn, cachedDisc, *pluralizer, rbacgen)
 
+	metricsServerBindAddress := ""
+	if ptr.Deref(metricsServerPort, 0) != 0 {
+		log.Info("Metrics server enabled", "bindAddress", fmt.Sprintf(":%d", *metricsServerPort))
+		metricsServerBindAddress = fmt.Sprintf(":%d", *metricsServerPort)
+	} else {
+		log.Info("Metrics server disabled")
+		metricsServerBindAddress = "0"
+	}
+
 	controller := genctrl.New(ctx, genctrl.Options{
 		Discovery:      cachedDisc,
 		Client:         dyn,
@@ -182,7 +193,7 @@ func main() {
 		Pluralizer:        *pluralizer,
 		GlobalRateLimiter: workqueue.NewExponentialTimedFailureRateLimiter[any](*minErrorRetryInterval, *maxErrorRetryInterval),
 		Metrics: metricsserver.Options{
-			BindAddress: ":8080",
+			BindAddress: metricsServerBindAddress,
 		},
 	})
 	controller.SetExternalClient(handler)
