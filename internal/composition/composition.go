@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient/tracer"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/rbacgen"
@@ -95,17 +97,27 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
-	meta.SetReleaseName(mg, mg.GetName())
+	compositionMeta.SetReleaseName(mg, mg.GetName())
 
 	if h.packageInfoGetter == nil {
 		return controller.ExternalObservation{}, fmt.Errorf("helm chart package info getter must be specified")
 	}
-
 	pkg, err := h.packageInfoGetter.WithLogger(log).Get(mg)
 	if err != nil {
 		log.Debug("Getting package info", "error", err)
 		return controller.ExternalObservation{}, err
 	}
+
+	compositionMeta.SetCompositionDefinitionLabels(mg, compositionMeta.CompositionDefinitionInfo{
+		Name:      pkg.CompositionDefinitionInfo.Name,
+		Namespace: pkg.CompositionDefinitionInfo.Namespace,
+		GVR:       pkg.CompositionDefinitionInfo.GVR,
+	})
+	// This sets the labels for the composition definition and release name
+	mg, err = tools.Update(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
+	})
 
 	hc, err := h.helmClientForResource(mg, pkg.RegistryAuth)
 	if err != nil {
@@ -236,7 +248,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
-	meta.SetReleaseName(mg, mg.GetName())
+	compositionMeta.SetReleaseName(mg, mg.GetName())
 	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
