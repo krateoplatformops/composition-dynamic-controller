@@ -75,6 +75,9 @@ func (c *ChartInspector) Validate(params Parameters) error {
 }
 
 func (c *ChartInspector) Resources(params Parameters) ([]Resource, error) {
+	if err := c.Validate(params); err != nil {
+		return nil, fmt.Errorf("validating parameters: %w", err)
+	}
 	u, err := url.JoinPath(c.server, "/resources")
 	if err != nil {
 		return nil, fmt.Errorf("joining server url: %w", err)

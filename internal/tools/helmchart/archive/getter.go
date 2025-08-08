@@ -142,14 +142,17 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			gvr.Resource = resource
 		}
 
-		name, ok := lbl[compositionMeta.CompositionDefinitionNameLabel]
-		if ok && name != "" {
+		name, _ := lbl[compositionMeta.CompositionDefinitionNameLabel]
+
+		namespace, _ := lbl[compositionMeta.CompositionDefinitionNamespaceLabel]
+
+		if len(gvr.Group) > 0 && len(gvr.Resource) > 0 && len(gvr.Version) > 0 && len(name) > 0 && len(namespace) > 0 {
+			g.logger.Debug("Using labels to get composition definition", "compositionDefinitionName", name, "compositionDefinitionNamespace", namespace, "gvr", gvr.String())
 			cdInfo = &CompositionDefinitionInfo{
-				Namespace: uns.GetNamespace(),
 				Name:      name,
+				Namespace: namespace,
 				GVR:       gvr,
 			}
-			g.logger.Debug("Using labels to get composition definition", "compositionDefinitionName", name, "compositionDefinitionNamespace", uns.GetNamespace(), "gvr", gvr.String())
 		}
 	}
 
@@ -158,9 +161,10 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 	if cdInfo != nil {
 		g.logger.Debug("Getting composition definition", "compositionDefinitionName", cdInfo.Name, "compositionDefinitionNamespace", cdInfo.Namespace, "gvr", cdInfo.GVR.String())
 		compositionDefinition, err = g.dynamicClient.Resource(cdInfo.GVR).
+			Namespace(cdInfo.Namespace).
 			Get(context.Background(), cdInfo.Name, metav1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("error getting composition definition '%s' in namespace '%s': %w", cdInfo.Name, cdInfo.Namespace, err)
+			return nil, fmt.Errorf("error getting composition definition '%s' in namespace '%s' with gvr: %s: %w", cdInfo.Name, cdInfo.Namespace, cdInfo.GVR.String(), err)
 		}
 	} else {
 		// Search for the composition definition in the namespace of the unstructured object
