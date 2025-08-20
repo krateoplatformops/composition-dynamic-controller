@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 
@@ -40,6 +41,8 @@ var (
 )
 
 const (
+	reasonReconciliationGracefullyPaused event.Reason = "ReconciliationGracefullyPaused"
+
 	// Event reasons
 	reasonCreated   = "CompositionCreated"
 	reasonDeleted   = "CompositionDeleted"
@@ -98,6 +101,24 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		WithValues("namespace", mg.GetNamespace())
 
 	compositionMeta.SetReleaseName(mg, mg.GetName())
+	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
+		log.Debug("Composition is gracefully paused, skipping observe.")
+		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Observe", "Reconciliation is paused via the gracefully paused annotation."))
+		return controller.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: true,
+		}, nil
+	}
+	// Immediately remove the gracefully paused time annotation if the composition is not gracefully paused.
+	meta.RemoveAnnotations(mg, compositionMeta.AnnotationKeyReconciliationGracefullyPausedTime)
+	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
+	})
+	if err != nil {
+		log.Debug("Updating composition", "error", err)
+		return controller.ExternalObservation{}, fmt.Errorf("updating composition: %w", err)
+	}
 
 	if h.packageInfoGetter == nil {
 		return controller.ExternalObservation{}, fmt.Errorf("helm chart package info getter must be specified")
@@ -220,21 +241,18 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		}, nil
 	}
 
-	err = setAvaibleStatus(mg, pkg, "Composition up-to-date")
+	err = setAvaibleStatus(mg, pkg, "Composition up-to-date", false)
 	if err != nil {
 		log.Debug("Setting available status", "error", err)
 		return controller.ExternalObservation{}, err
 	}
-	mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
-		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
-	})
 	if err != nil {
 		log.Debug("Updating cr status with condition", "error", err, "condition", condition.Available())
 		return controller.ExternalObservation{}, err
 	}
 
 	log.Debug("Composition Observed - installed", "package", pkg.URL)
+
 	return controller.ExternalObservation{
 		ResourceExists:   true,
 		ResourceUpToDate: true,
@@ -247,6 +265,12 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
+
+	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
+		log.Debug("Composition is gracefully paused, skipping create.")
+		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Update", "Reconciliation is paused via the gracefully paused annotation."))
+		return nil
+	}
 
 	compositionMeta.SetReleaseName(mg, mg.GetName())
 	mg, err := tools.Update(ctx, mg, tools.UpdateOptions{
@@ -343,12 +367,14 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	h.logger.Debug("Composition created.", "package", pkg.URL)
 
 	h.eventRecorder.Event(mg, event.Normal(reasonCreated, "Create", fmt.Sprintf("Composition created: %s", mg.GetName())))
-	err = setAvaibleStatus(mg, pkg, "Composition created")
+	err = setAvaibleStatus(mg, pkg, "Composition created", true)
 	if err != nil {
 		log.Debug("Setting available status", "error", err)
 		return err
 	}
-	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+
+	meta.RemoveAnnotations(mg, compositionMeta.AnnotationKeyReconciliationGracefullyPausedTime)
+	_, err = tools.Update(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
 	})
@@ -361,6 +387,12 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
+
+	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
+		log.Debug("Composition is gracefully paused, skipping update.")
+		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Update", "Reconciliation is paused via the gracefully paused annotation."))
+		return nil
+	}
 
 	log.Debug("Handling composition values update.")
 
@@ -402,16 +434,36 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	log.Debug("Composition values updated.", "package", pkg.URL)
 
 	h.eventRecorder.Event(mg, event.Normal(reasonUpdated, "Update", fmt.Sprintf("Updated composition: %s", mg.GetName())))
-	err = setAvaibleStatus(mg, pkg, "Composition values updated.")
-	if err != nil {
-		log.Debug("Setting available status", "error", err)
-		return err
+
+	if compositionMeta.IsGracefullyPaused(mg) {
+		err = setGracefullyPausedCondition(mg, pkg)
+		if err != nil {
+			log.Debug("Setting gracefully paused condition", "error", err)
+			return err
+		}
+		compositionMeta.SetGracefullyPausedTime(mg, time.Now())
+		log.Debug("Composition is gracefully paused.")
+		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Update", "Reconciliation is paused via the gracefully paused annotation."))
+	} else {
+		// Normal behavior, set available status
+		err = setAvaibleStatus(mg, pkg, "Composition values updated.", true)
+		if err != nil {
+			log.Debug("Setting available status", "error", err)
+			return err
+		}
+
+		meta.RemoveAnnotations(mg, compositionMeta.AnnotationKeyReconciliationGracefullyPausedTime)
 	}
-	_, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
+
+	_, err = tools.Update(ctx, mg, tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
 		DynamicClient: h.dynamicClient,
 	})
-	return err
+	if err != nil {
+		log.Debug("Updating cr with values", "error", err)
+		return err
+	}
+	return nil
 }
 
 func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
@@ -420,6 +472,12 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
+
+	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
+		log.Debug("Composition is gracefully paused, skipping delete.")
+		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Delete", "Reconciliation is paused via the gracefully paused annotation."))
+		return nil
+	}
 
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
@@ -497,6 +555,16 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 
 	h.eventRecorder.Event(mg, event.Normal(reasonDeleted, "Delete", fmt.Sprintf("Deleted composition: %s", mg.GetName())))
 	log.Debug("Composition package removed.", "package", pkg.URL)
+	meta.RemoveAnnotations(mg, compositionMeta.AnnotationKeyReconciliationGracefullyPausedTime)
+
+	_, err = tools.Update(ctx, mg, tools.UpdateOptions{
+		Pluralizer:    h.pluralizer,
+		DynamicClient: h.dynamicClient,
+	})
+	if err != nil {
+		log.Debug("Updating cr with values", "error", err)
+		return fmt.Errorf("updating cr with values: %w", err)
+	}
 
 	return nil
 }
