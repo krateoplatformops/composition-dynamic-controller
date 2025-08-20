@@ -11,13 +11,13 @@ func TestReconcileGracefullyPaused(t *testing.T) {
 	result := ReconcileGracefullyPaused()
 
 	// Test Type
-	if result.Type != condition.TypeSynced {
-		t.Errorf("Expected Type to be %s, got %s", condition.TypeSynced, result.Type)
+	if result.Type != condition.TypeReady {
+		t.Errorf("Expected Type to be %s, got %s", condition.TypeReady, result.Type)
 	}
 
 	// Test Status
-	if result.Status != metav1.ConditionFalse {
-		t.Errorf("Expected Status to be %s, got %s", metav1.ConditionFalse, result.Status)
+	if result.Status != metav1.ConditionTrue {
+		t.Errorf("Expected Status to be %s, got %s", metav1.ConditionTrue, result.Status)
 	}
 
 	// Test Reason

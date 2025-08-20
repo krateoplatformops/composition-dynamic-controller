@@ -484,6 +484,12 @@ func TestController(t *testing.T) {
 			return ctx
 		}
 
+		u, err = cli.Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if err == nil {
+			t.Error("Composition still exists after deletion.")
+			return ctx
+		}
+
 		err = handler.Delete(ctx, u)
 		if err != nil {
 			t.Error("Deleting composition.", "error", err)
