@@ -379,7 +379,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Debug("Setting available status", "error", err)
 		return err
 	}
-	_, err = tools.UpdateStatus(ctx, mg, updateOpts)
+	mg, err = tools.UpdateStatus(ctx, mg, updateOpts)
 	if err != nil {
 		log.Debug("Updating cr status with values", "error", err)
 		return fmt.Errorf("updating cr with values: %w", err)
@@ -387,7 +387,12 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	meta.RemoveAnnotations(mg, compositionMeta.AnnotationKeyReconciliationGracefullyPausedTime)
 	_, err = tools.Update(ctx, mg, updateOpts)
-	return fmt.Errorf("updating cr with values: %w", err)
+	if err != nil {
+		log.Debug("Updating cr with values", "error", err)
+		return fmt.Errorf("updating cr with values: %w", err)
+	}
+
+	return nil
 }
 
 func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) error {
