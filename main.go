@@ -201,6 +201,7 @@ func main() {
 			ctrlevent.AnnotationEvent{
 				EventType:  ctrlevent.Observe,
 				Annotation: compositionMeta.AnnotationKeyReconciliationGracefullyPaused,
+				OnAction:   ctrlevent.OnAny,
 			},
 		),
 	})
