@@ -95,7 +95,7 @@ The values are injected in the following way:
 | `global.compositionResource` | `krateo.io/composition-resource` | The plural name of the composition resource. |
 | `global.compositionKind` | `krateo.io/composition-kind` | The kind of the composition resource. |
 | `global.krateoNamespace` | `krateo.io/krateo-namespace` | The namespace where Krateo is installed. This value is used to identify the Krateo resources in the cluster. |
-| `global.gracefullyPaused`|  | This value is set to `true` if the annotation `krateo.io/gracefully-paused` is set on the composition resource. This value is used to pause the reconciliation of the composition resource only after the value is injected in the helm release values with a successful helm upgrade. Read the [paragraph below](#about-the-gracefullypaused-value) for more details. |
+| `global.gracefullyPaused`| not injected | This value is set to `true` if the annotation `krateo.io/gracefully-paused` is set on the composition resource. This value is used to pause the reconciliation of the composition resource only after the value is injected in the helm release values with a successful helm upgrade. Read the [paragraph below](#about-the-gracefullypaused-value) for more details. |
 
 ### About the `gracefullyPaused` value
 
