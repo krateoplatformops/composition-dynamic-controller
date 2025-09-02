@@ -223,6 +223,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Performing helm chart update", "error", err)
 		return controller.ExternalObservation{}, err
 	}
+
 	modifiedResources := tracer.GetResources()
 	if len(modifiedResources) > 0 {
 		for _, resource := range modifiedResources {
