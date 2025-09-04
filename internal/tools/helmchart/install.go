@@ -60,7 +60,7 @@ func Install(ctx context.Context, opts InstallOptions) (*release.Release, int64,
 	}
 
 	if compositionMeta.IsGracefullyPaused(opts.Resource) {
-		dat, err = AddOrUpdateFieldInValues(dat, "true", "global", "gracefullyPaused")
+		dat, err = AddOrUpdateFieldInValues(dat, "\"true\"", "global", "gracefullyPaused")
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to add gracefullyPaused to values: %w", err)
 		}
