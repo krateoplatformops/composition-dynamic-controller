@@ -140,6 +140,8 @@ spec:
 ```
 
 ##### For non-Krateo resources:
+> **NOTE:** Operators implemented without the Krateo runtime may handle "pause" semantics differently (different annotation keys, immediate vs. delayed behavior, or custom fields). Before templating a pause for a non‑Krateo controller, review that operator's API and controller behavior and adapt the Helm template to map `global.gracefullyPaused` to the operator's expected pause mechanism.
+
 
 This is an example of how to include the pause in a non-Krateo resource included in the chart. In this case, we use an ArgoCD Application as an example.
 
