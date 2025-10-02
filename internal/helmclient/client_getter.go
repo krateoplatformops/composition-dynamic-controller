@@ -84,11 +84,6 @@ type CachedClients struct {
 }
 
 func NewCachedClients(cfg *rest.Config) (CachedClients, error) {
-	// discovery, err := discovery.NewDiscoveryClientForConfig(cfg)
-	// if err != nil {
-	// 	return CachedClients{}, err
-	// }
-	// cachedDiscovery := memory.NewMemCacheClient(discovery)
 	dir, err := os.MkdirTemp("", "helmclient")
 	if err != nil {
 		return CachedClients{}, err
