@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,12 +198,11 @@ func TestController(t *testing.T) {
 				_ = enc.Encode(resources)
 			})
 
-			go func() {
-				// ignore error on ListenAndServe; test process will end it
-				_ = http.ListenAndServe(":30007", mux)
-			}()
-			// give server a moment to start
-			time.Sleep(200 * time.Millisecond)
+			// Use httptest.Server so the test gets a reliable ephemeral port/URL
+			ts := httptest.NewServer(mux)
+			// intentionally NOT deferring ts.Close() here because Setup returns
+			// and we want the server available for the entire test lifecycle.
+			chartInspectorMockURL := ts.URL
 			// --- end chart-inspector mock server ---
 
 			pig, err = archive.Dynamic(cfg.Client().RESTConfig(), pluralizer)
@@ -210,9 +210,6 @@ func TestController(t *testing.T) {
 				t.Error("Creating chart url info getter.", "error", err)
 				return ctx
 			}
-
-			/* use the mock URL directly when creating the handler */
-			chartInspectorMockURL := "http://localhost:30007"
 
 			rec, err = eventrecorder.Create(ctx, cfg.Client().RESTConfig(), "test", nil)
 			if err != nil {
