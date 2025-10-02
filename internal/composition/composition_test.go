@@ -72,11 +72,9 @@ var (
 )
 
 const (
-	testdataPath  = "../../testdata"
-	manifestsPath = "../../manifests"
-	namespace     = "demo-system"
-	altNamespace  = "krateo-system"
-	// chartInspectorUrl = "http://localhost:30007"
+	testdataPath = "../../testdata"
+	namespace    = "demo-system"
+	altNamespace = "krateo-system"
 )
 
 func TestMain(m *testing.M) {
@@ -86,20 +84,9 @@ func TestMain(m *testing.M) {
 	testenv = env.New()
 
 	testenv.Setup(
-		envfuncs.CreateClusterWithConfig(kind.NewProvider(), clusterName, filepath.Join(manifestsPath, "kind.yaml")),
+		envfuncs.CreateCluster(kind.NewProvider(), clusterName),
 		e2e.CreateNamespace(namespace),
 		e2e.CreateNamespace(altNamespace),
-
-		// func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
-		// 	err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "chart-inspector-deployment.yaml", nil)
-		// 	if err != nil {
-		// 		return ctx, err
-		// 	}
-
-		// 	time.Sleep(2 * time.Minute)
-
-		// 	return ctx, nil
-		// },
 	).Finish(
 		envfuncs.DeleteNamespace(namespace),
 		envfuncs.DestroyCluster(clusterName),
