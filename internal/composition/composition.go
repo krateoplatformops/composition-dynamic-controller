@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/chartinspector"
 	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/helmclient"
@@ -59,12 +60,15 @@ const (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event event.APIRecorder, pluralizer pluralizer.PluralizerInterface, rbacgen rbacgen.RBACGenInterface) controller.ExternalClient {
-	dyn, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		log.Error(err, "Creating dynamic client.")
-		return nil
-	}
+func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event event.APIRecorder, pluralizer pluralizer.PluralizerInterface, chartInspectorUrl string, saName string, saNamespace string) controller.ExternalClient {
+	// dyn, err := dynamic.NewForConfig(cfg)
+	// if err != nil {
+	// 	log.Error(err, "Creating dynamic client.")
+	// 	return nil
+	// }
+
+	// chartInspector := chartinspector.NewChartInspector(chartInspectorUrl)
+	// rbacgen := rbacgen.NewRBACGen(saName, saNamespace, &chartInspector)
 
 	val, ok := os.LookupEnv(helmRegistryConfigPathEnvVar)
 	if ok {
@@ -75,35 +79,46 @@ func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event 
 
 	return &handler{
 		kubeconfig:        cfg,
-		rbacgen:           rbacgen,
 		pluralizer:        pluralizer,
 		logger:            log,
-		dynamicClient:     dyn,
 		packageInfoGetter: pig,
 		eventRecorder:     event,
+
+		chartInspectorUrl: chartInspectorUrl,
+		saName:            saName,
+		saNamespace:       saNamespace,
 	}
 }
 
 type handler struct {
 	kubeconfig        *rest.Config
-	rbacgen           rbacgen.RBACGenInterface
 	logger            logging.Logger
 	pluralizer        pluralizer.PluralizerInterface
-	dynamicClient     dynamic.Interface
 	packageInfoGetter archive.Getter
 	eventRecorder     event.APIRecorder
+
+	chartInspectorUrl string
+	saName            string
+	saNamespace       string
 }
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
+	mg = mg.DeepCopy()
 	log := h.logger.WithValues("op", "Observe").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
+	dyn, err := dynamic.NewForConfig(h.kubeconfig)
+	if err != nil {
+		log.Error(err, "Creating dynamic client.")
+		return controller.ExternalObservation{}, err
+	}
+
 	updateOpts := tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
+		DynamicClient: dyn,
 	}
 
 	compositionMeta.SetReleaseName(mg, mg.GetName())
@@ -117,7 +132,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 	// Immediately remove the gracefully paused time annotation if the composition is not gracefully paused.
 	meta.RemoveAnnotations(mg, compositionMeta.AnnotationKeyReconciliationGracefullyPausedTime)
-	mg, err := tools.Update(ctx, mg, updateOpts)
+	mg, err = tools.Update(ctx, mg, updateOpts)
 	if err != nil {
 		log.Error(err, "Updating cr with values")
 		return controller.ExternalObservation{}, fmt.Errorf("updating cr with values: %w", err)
@@ -185,8 +200,11 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Error(err, "Converting GVK to GVR")
 		return controller.ExternalObservation{}, fmt.Errorf("converting GVK to GVR: %w", err)
 	}
+
+	chartInspector := chartinspector.NewChartInspector(h.chartInspectorUrl)
+	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
-	generated, err := h.rbacgen.
+	generated, err := rbgen.
 		WithBaseName(meta.GetReleaseName(mg)).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
@@ -200,7 +218,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Error(err, "Generating RBAC using chart-inspector")
 		return controller.ExternalObservation{}, err
 	}
-	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	rbInstaller := rbac.NewRBACInstaller(dyn)
 	err = rbInstaller.ApplyRBAC(generated)
 	if err != nil {
 		log.Error(err, "Installing RBAC")
@@ -218,7 +236,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	opts := helmchart.UpdateOptions{
 		CheckResourceOptions: helmchart.CheckResourceOptions{
-			DynamicClient: h.dynamicClient,
+			DynamicClient: dyn,
 			Pluralizer:    h.pluralizer,
 		},
 		HelmClient:      hc,
@@ -269,7 +287,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, err
 	}
 
-	mg, err = tools.UpdateStatus(ctx, mg, updateOpts)
+	_, err = tools.UpdateStatus(ctx, mg, updateOpts)
 	if err != nil {
 		log.Error(err, "Updating cr status with values")
 		return controller.ExternalObservation{}, err
@@ -284,15 +302,22 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 }
 
 func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) error {
+	mg = mg.DeepCopy()
 	log := h.logger.WithValues("op", "Create").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
+	dyn, err := dynamic.NewForConfig(h.kubeconfig)
+	if err != nil {
+		log.Error(err, "Creating dynamic client.")
+		return nil
+	}
+
 	updateOpts := tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
+		DynamicClient: dyn,
 	}
 
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
@@ -302,7 +327,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	compositionMeta.SetReleaseName(mg, mg.GetName())
-	mg, err := tools.Update(ctx, mg, updateOpts)
+	mg, err = tools.Update(ctx, mg, updateOpts)
 	if err != nil {
 		log.Error(err, "Updating cr with values")
 		return fmt.Errorf("updating cr with values: %w", err)
@@ -323,8 +348,11 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Error(err, "Converting GVK to GVR")
 		return fmt.Errorf("converting GVK to GVR: %w", err)
 	}
+
+	chartInspector := chartinspector.NewChartInspector(h.chartInspectorUrl)
+	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
-	generated, err := h.rbacgen.
+	generated, err := rbgen.
 		WithBaseName(meta.GetReleaseName(mg)).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
@@ -338,7 +366,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Error(err, "Generating RBAC using chart-inspector")
 		return err
 	}
-	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	rbInstaller := rbac.NewRBACInstaller(dyn)
 	err = rbInstaller.ApplyRBAC(generated)
 	if err != nil {
 		log.Error(err, "Installing RBAC")
@@ -354,7 +382,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 
 	opts := helmchart.InstallOptions{
 		CheckResourceOptions: helmchart.CheckResourceOptions{
-			DynamicClient: h.dynamicClient,
+			DynamicClient: dyn,
 			Pluralizer:    h.pluralizer,
 		},
 		HelmClient:      hc,
@@ -416,15 +444,23 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 }
 
 func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) error {
+	mg = mg.DeepCopy()
+
 	log := h.logger.WithValues("op", "Update").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
+	dyn, err := dynamic.NewForConfig(h.kubeconfig)
+	if err != nil {
+		log.Error(err, "Creating dynamic client.")
+		return nil
+	}
+
 	updateOpts := tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
+		DynamicClient: dyn,
 	}
 
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
@@ -482,7 +518,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		}
 		mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 			Pluralizer:    h.pluralizer,
-			DynamicClient: h.dynamicClient,
+			DynamicClient: dyn,
 		})
 		if err != nil {
 			log.Error(err, "Updating cr status with values")
@@ -501,7 +537,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		}
 		mg, err = tools.UpdateStatus(ctx, mg, tools.UpdateOptions{
 			Pluralizer:    h.pluralizer,
-			DynamicClient: h.dynamicClient,
+			DynamicClient: dyn,
 		})
 		if err != nil {
 			log.Error(err, "Updating cr status with values")
@@ -520,15 +556,23 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 }
 
 func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) error {
+	mg = mg.DeepCopy()
+
 	log := h.logger.WithValues("op", "Delete").
 		WithValues("apiVersion", mg.GetAPIVersion()).
 		WithValues("kind", mg.GetKind()).
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
+	dyn, err := dynamic.NewForConfig(h.kubeconfig)
+	if err != nil {
+		log.Error(err, "Creating dynamic client.")
+		return nil
+	}
+
 	updateOpts := tools.UpdateOptions{
 		Pluralizer:    h.pluralizer,
-		DynamicClient: h.dynamicClient,
+		DynamicClient: dyn,
 	}
 
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
@@ -562,7 +606,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	// Check if the release exists before uninstalling
-	rel, err := helmchart.FindAnyRelease(hc, meta.GetReleaseName(mg))
+	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
 	if err != nil {
 		return fmt.Errorf("finding helm release: %w", err)
 	}
@@ -578,7 +622,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("uninstalling helm chart: %w", err)
 	}
 
-	rel, err = helmchart.FindAnyRelease(hc, meta.GetReleaseName(mg))
+	rel, err = helmchart.FindRelease(hc, meta.GetReleaseName(mg))
 	if err != nil {
 		log.Error(err, "Finding helm release")
 		return fmt.Errorf("finding helm release: %w", err)
@@ -595,8 +639,10 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		log.Error(err, "Converting GVK to GVR")
 		return fmt.Errorf("converting GVK to GVR: %w", err)
 	}
+	chartInspector := chartinspector.NewChartInspector(h.chartInspectorUrl)
+	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
-	generated, err := h.rbacgen.
+	generated, err := rbgen.
 		WithBaseName(meta.GetReleaseName(mg)).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
@@ -606,7 +652,11 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 			CompositionDefinitionNamespace: pkg.CompositionDefinitionInfo.Namespace,
 			CompositionDefintionGVR:        pkg.CompositionDefinitionInfo.GVR,
 		})
-	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
+	if err != nil {
+		log.Error(err, "Generating RBAC using chart-inspector")
+		return err
+	}
+	rbInstaller := rbac.NewRBACInstaller(dyn)
 	err = rbInstaller.UninstallRBAC(generated)
 	if err != nil {
 		log.Error(err, "Uninstalling RBAC")
@@ -632,6 +682,12 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 		WithValues("name", mg.GetName()).
 		WithValues("namespace", mg.GetNamespace())
 
+	clientSet, err := helmclient.NewCachedClients(h.kubeconfig)
+	if err != nil {
+		log.Error(err, "Creating cached helm client set.")
+		return nil, err
+	}
+
 	opts := &helmclient.Options{
 		Namespace:        mg.GetNamespace(),
 		RepositoryCache:  "/tmp/.helmcache",
@@ -653,10 +709,13 @@ func (h *handler) helmClientForResource(mg *unstructured.Unstructured, registryA
 		RegistryAuth: (registryAuth),
 	}
 
-	return helmclient.NewClientFromRestConf(&helmclient.RestConfClientOptions{
-		Options:    opts,
-		RestConfig: h.kubeconfig,
-	})
+	return helmclient.NewCachedClientFromRestConf(
+		&helmclient.RestConfClientOptions{
+			Options:    opts,
+			RestConfig: h.kubeconfig,
+		},
+		&clientSet,
+	)
 }
 
 func (h *handler) helmClientForResourceWithTransportWrapper(mg *unstructured.Unstructured, registryAuth *helmclient.RegistryAuth, transportWrapper func(http.RoundTripper) http.RoundTripper) (helmclient.Client, error) {
@@ -671,10 +730,19 @@ func (h *handler) helmClientForResourceWithTransportWrapper(mg *unstructured.Uns
 		RegistryAuth:     registryAuth,
 	}
 
-	h.kubeconfig.WrapTransport = transportWrapper
+	clientSet, err := helmclient.NewCachedClients(h.kubeconfig)
+	if err != nil {
+		return nil, err
+	}
 
-	return helmclient.NewClientFromRestConf(&helmclient.RestConfClientOptions{
-		Options:    opts,
-		RestConfig: h.kubeconfig,
-	})
+	cfg := rest.CopyConfig(h.kubeconfig)
+	cfg.WrapTransport = transportWrapper
+
+	return helmclient.NewCachedClientFromRestConf(
+		&helmclient.RestConfClientOptions{
+			Options:    opts,
+			RestConfig: cfg,
+		},
+		&clientSet,
+	)
 }

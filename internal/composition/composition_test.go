@@ -25,8 +25,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/gobuffalo/flect"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/chartinspector"
-	"github.com/krateoplatformops/composition-dynamic-controller/internal/rbacgen"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/helmchart/archive"
 	"github.com/krateoplatformops/plumbing/kubeutil/event"
 	"github.com/krateoplatformops/plumbing/kubeutil/eventrecorder"
@@ -176,9 +174,9 @@ func TestController(t *testing.T) {
 				return ctx
 			}
 
-			chartInspector := chartinspector.NewChartInspector(chartInspectorUrl)
-			rbacgen := rbacgen.NewRBACGen("test-sa", altNamespace, &chartInspector)
-			handler = NewHandler(cfg.Client().RESTConfig(), log, pig, *event.NewAPIRecorder(rec), pluralizer, rbacgen)
+			// chartInspector := chartinspector.NewChartInspector(chartInspectorUrl)
+			// rbacgen := rbacgen.NewRBACGen("test-sa", altNamespace, &chartInspector)
+			handler = NewHandler(cfg.Client().RESTConfig(), log, pig, *event.NewAPIRecorder(rec), pluralizer, chartInspectorUrl, "test-sa", altNamespace)
 
 			resli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositiondefinitions")), "*.yaml")
 			if err != nil {
