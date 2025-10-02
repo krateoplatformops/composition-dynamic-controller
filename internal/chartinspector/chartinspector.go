@@ -43,7 +43,7 @@ var _ ChartInspectorInterface = &ChartInspector{}
 
 func NewChartInspector(server string) ChartInspector {
 	httpcli := http.DefaultClient
-	httpcli.Timeout = 10 * time.Second
+	httpcli.Timeout = 20 * time.Second
 
 	return ChartInspector{server: server, httpClient: httpcli}
 }
