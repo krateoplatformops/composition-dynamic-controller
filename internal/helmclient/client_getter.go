@@ -127,8 +127,8 @@ func (c namespaceClientConfig) ConfigAccess() clientcmd.ConfigAccess {
 	return nil
 }
 
-// NewRESTClientGetter returns a RESTClientGetter using the provided 'namespace', 'kubeConfig' and 'restConfig'.
-// source: https://github.com/helm/helm/issues/6910#issuecomment-601277026
+// NewCachedRESTClientGetter returns a RESTClientGetter using the provided 'namespace', 'kubeConfig', and 'restConfig',
+// and uses cached clients for discovery and REST mapping to improve performance and reduce API server load.
 func NewCachedRESTClientGetter(namespace string, kubeConfig []byte, restConfig *rest.Config, clients *CachedClients, opts ...RESTClientOption) *CachedRESTClientGetter {
 	return &CachedRESTClientGetter{
 		kubeConfig:      kubeConfig,
