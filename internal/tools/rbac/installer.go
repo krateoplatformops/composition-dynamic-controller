@@ -42,7 +42,7 @@ func (i *RBACInstaller) ApplyRBAC(rbac *RBAC) error {
 	if rbac.ClusterRole != nil {
 		_, err := i.ApplyClusterRole(context.Background(), rbac.ClusterRole)
 		if err != nil {
-			return fmt.Errorf("failed to Apply ClusterRole: %w - name: %s", err, rbac.ClusterRoleBinding.Name)
+			return fmt.Errorf("failed to Apply ClusterRole: %w - name: %s", err, rbac.ClusterRole.Name)
 		}
 	}
 	if rbac.ClusterRoleBinding != nil {
@@ -55,13 +55,13 @@ func (i *RBACInstaller) ApplyRBAC(rbac *RBAC) error {
 		if ns.Role != nil {
 			_, err := i.ApplyRole(context.Background(), ns.Role)
 			if err != nil {
-				return fmt.Errorf("failed to Apply Role: %w - name: %s", err, rbac.ClusterRoleBinding.Name)
+				return fmt.Errorf("failed to Apply Role: %w - name: %s", err, ns.Role.Name)
 			}
 		}
 		if ns.RoleBinding != nil {
 			_, err := i.ApplyRoleBinding(context.Background(), ns.RoleBinding)
 			if err != nil {
-				return fmt.Errorf("failed to Apply RoleBinding: %w - name: %s", err, rbac.ClusterRoleBinding.Name)
+				return fmt.Errorf("failed to Apply RoleBinding: %w - name: %s", err, ns.RoleBinding.Name)
 			}
 		}
 	}
