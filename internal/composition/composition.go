@@ -61,15 +61,6 @@ const (
 var _ controller.ExternalClient = (*handler)(nil)
 
 func NewHandler(cfg *rest.Config, log logging.Logger, pig archive.Getter, event event.APIRecorder, pluralizer pluralizer.PluralizerInterface, chartInspectorUrl string, saName string, saNamespace string) controller.ExternalClient {
-	// dyn, err := dynamic.NewForConfig(cfg)
-	// if err != nil {
-	// 	log.Error(err, "Creating dynamic client.")
-	// 	return nil
-	// }
-
-	// chartInspector := chartinspector.NewChartInspector(chartInspectorUrl)
-	// rbacgen := rbacgen.NewRBACGen(saName, saNamespace, &chartInspector)
-
 	val, ok := os.LookupEnv(helmRegistryConfigPathEnvVar)
 	if ok {
 		helmRegistryConfigPath = val
@@ -312,7 +303,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	dyn, err := dynamic.NewForConfig(h.kubeconfig)
 	if err != nil {
 		log.Error(err, "Creating dynamic client.")
-		return nil
+		return fmt.Errorf("creating dynamic client: %w", err)
 	}
 
 	updateOpts := tools.UpdateOptions{
@@ -455,7 +446,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	dyn, err := dynamic.NewForConfig(h.kubeconfig)
 	if err != nil {
 		log.Error(err, "Creating dynamic client.")
-		return nil
+		return fmt.Errorf("creating dynamic client: %w", err)
 	}
 
 	updateOpts := tools.UpdateOptions{
@@ -567,7 +558,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	dyn, err := dynamic.NewForConfig(h.kubeconfig)
 	if err != nil {
 		log.Error(err, "Creating dynamic client.")
-		return nil
+		return fmt.Errorf("creating dynamic client: %w", err)
 	}
 
 	updateOpts := tools.UpdateOptions{
