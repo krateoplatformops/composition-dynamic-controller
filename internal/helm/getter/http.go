@@ -2,7 +2,6 @@ package getter
 
 import (
 	"fmt"
-	"io"
 	"net/url"
 	"strings"
 
@@ -13,12 +12,12 @@ var _ Getter = (*repoGetter)(nil)
 
 type repoGetter struct{}
 
-func (g *repoGetter) Get(opts GetOptions) (io.ReadCloser, string, error) {
+func (g *repoGetter) Get(opts GetOptions) ([]byte, string, error) {
 	if !isHTTP(opts.URI) {
 		return nil, "", fmt.Errorf("uri '%s' is not a valid Repo ref", opts.URI)
 	}
 
-	buf, err := fetchStream(GetOptions{
+	buf, err := fetch(GetOptions{
 		URI:                   fmt.Sprintf("%s/index.yaml", opts.URI),
 		InsecureSkipVerifyTLS: opts.InsecureSkipVerifyTLS,
 		Username:              opts.Username,
@@ -28,12 +27,8 @@ func (g *repoGetter) Get(opts GetOptions) (io.ReadCloser, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	bufb, err := io.ReadAll(buf)
-	if err != nil {
-		return nil, "", err
-	}
 
-	idx, err := repo.Load(bufb, opts.URI, opts.Logging)
+	idx, err := repo.Load(buf, opts.URI, opts.Logging)
 	if err != nil {
 		return nil, "", err
 	}
@@ -66,7 +61,7 @@ func (g *repoGetter) Get(opts GetOptions) (io.ReadCloser, string, error) {
 		PassCredentialsAll:    opts.PassCredentialsAll,
 	}
 
-	dat, err := fetchStream(newopts)
+	dat, err := fetch(newopts)
 	if err != nil {
 		return nil, "", err
 	}

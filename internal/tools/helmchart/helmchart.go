@@ -1,12 +1,11 @@
 package helmchart
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
-	"github.com/krateoplatformops/plumbing/maps"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
@@ -21,8 +20,10 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	sigsyaml "sigs.k8s.io/yaml"
 
+	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 )
 
@@ -117,76 +118,77 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) (*release.R
 }
 
 func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) ([]objectref.ObjectRef, error) {
-	// build an io.Reader that streams manifest + hooks without concatenating into a single []byte
-	var readers []io.Reader
+	out := new(bytes.Buffer)
+
+	// We ignore a potential error here because, when the --debug flag was specified,
+	// we always want to print the YAML, even if it is not valid. The error is still returned afterwards.
 	if rel != nil {
-		if strings.TrimSpace(rel.Manifest) != "" {
-			readers = append(readers, strings.NewReader(rel.Manifest))
+		var manifests bytes.Buffer
+		fmt.Fprintln(&manifests, strings.TrimSpace(rel.Manifest))
+
+		for _, m := range rel.Hooks {
+			fmt.Fprintf(&manifests, "---\n# Source: %s\n%s\n", m.Path, m.Manifest)
 		}
-		for _, h := range rel.Hooks {
-			// include hook marker to preserve document boundary
-			hdr := fmt.Sprintf("\n---\n# Source: %s\n", h.Path)
-			readers = append(readers, strings.NewReader(hdr+h.Manifest))
-		}
+
+		// if we have a list of files to render, then check that each of the
+		// provided files exists in the chart.
+		fmt.Fprintf(out, "%s", manifests.String())
 	}
 
 	all := []objectref.ObjectRef{}
-	if len(readers) == 0 {
-		return all, nil
-	}
+	tpl := out.Bytes()
 
-	combined := io.MultiReader(readers...)
-	decoder := yamlutil.NewYAMLOrJSONDecoder(combined, 4096)
-	for {
-		var doc map[string]interface{}
-		if err := decoder.Decode(&doc); err != nil {
-			if err == io.EOF {
-				break
-			}
-			// skip invalid doc but continue processing others
-			continue
-		}
-		if doc == nil {
+	for _, spec := range strings.Split(string(tpl), "---") {
+		if len(spec) == 0 {
 			continue
 		}
 
-		// extract minimal metadata without building runtime.Object using maps helper
-		apiVersion, _ := maps.NestedString(doc, "apiVersion")
-		kind, _ := maps.NestedString(doc, "kind")
-		name, _ := maps.NestedString(doc, "metadata", "name")
-		namespace, _ := maps.NestedString(doc, "metadata", "namespace")
-		hook, _ := maps.NestedString(doc, "metadata", "annotations", "helm.sh/hook")
+		decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader([]byte(spec)), 100)
 
-		if namespace == "" {
-			namespace = defaultNamespace
+		var rawObj runtime.RawExtension
+		if err := decoder.Decode(&rawObj); err != nil {
+			return all, err
 		}
-		// skip helm hooks if present
-		if hook != "" {
-			continue
-		}
-		if apiVersion == "" && kind == "" && name == "" {
+		if rawObj.Raw == nil {
 			continue
 		}
 
+		obj, gvk, err := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme).Decode(rawObj.Raw, nil, nil)
+		if err != nil {
+			return all, err
+		}
+
+		unstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		if err != nil {
+			return all, err
+		}
+
+		unstructuredObj := &unstructured.Unstructured{Object: unstructuredMap}
+		if unstructuredObj.GetNamespace() == "" {
+			unstructuredObj.SetNamespace(defaultNamespace)
+		}
+
+		_, ok, err := unstructured.NestedString(unstructuredMap, "metadata", "annotations", "helm.sh/hook")
+		if ok || err != nil {
+			continue
+		}
+
+		apiVersion, kind := gvk.ToAPIVersionAndKind()
 		all = append(all, objectref.ObjectRef{
 			APIVersion: apiVersion,
 			Kind:       kind,
-			Name:       name,
-			Namespace:  namespace,
+			Name:       unstructuredObj.GetName(),
+			Namespace:  unstructuredObj.GetNamespace(),
 		})
-
-		apiVersion = ""
-		kind = ""
-		name = ""
-		namespace = ""
-		hook = ""
 	}
+
 	return all, nil
 }
 
 type CheckResourceOptions struct {
 	DynamicClient dynamic.Interface
 	Pluralizer    pluralizer.PluralizerInterface
+	// DiscoveryClient discovery.DiscoveryInterface
 }
 
 func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResourceOptions) (*objectref.ObjectRef, error) {
@@ -219,14 +221,20 @@ func CheckResource(ctx context.Context, ref objectref.ObjectRef, opts CheckResou
 }
 
 func FindRelease(hc helmclient.Client, name string) (*release.Release, error) {
-	rel, err := hc.GetRelease(name)
+	all, err := hc.ListDeployedReleases()
 	if err != nil {
-		if strings.Contains(err.Error(), "release: not found") {
-			return nil, nil
-		}
 		return nil, err
 	}
-	return rel, nil
+
+	var res *release.Release
+	for _, el := range all {
+		if name == el.Name {
+			res = el
+			break
+		}
+	}
+
+	return res, nil
 }
 
 func FindAllReleases(hc helmclient.Client) ([]*release.Release, error) {
