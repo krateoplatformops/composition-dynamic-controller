@@ -5,8 +5,10 @@ package composition
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,11 +71,11 @@ var (
 )
 
 const (
-	testdataPath      = "../../testdata"
-	manifestsPath     = "../../manifests"
-	namespace         = "demo-system"
-	altNamespace      = "krateo-system"
-	chartInspectorUrl = "http://localhost:30007"
+	testdataPath  = "../../testdata"
+	manifestsPath = "../../manifests"
+	namespace     = "demo-system"
+	altNamespace  = "krateo-system"
+	// chartInspectorUrl = "http://localhost:30007"
 )
 
 func TestMain(m *testing.M) {
@@ -87,16 +89,16 @@ func TestMain(m *testing.M) {
 		e2e.CreateNamespace(namespace),
 		e2e.CreateNamespace(altNamespace),
 
-		func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
-			err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "chart-inspector-deployment.yaml", nil)
-			if err != nil {
-				return ctx, err
-			}
+		// func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
+		// 	err := decoder.ApplyWithManifestDir(ctx, cfg.Client().Resources(), manifestsPath, "chart-inspector-deployment.yaml", nil)
+		// 	if err != nil {
+		// 		return ctx, err
+		// 	}
 
-			time.Sleep(2 * time.Minute)
+		// 	time.Sleep(2 * time.Minute)
 
-			return ctx, nil
-		},
+		// 	return ctx, nil
+		// },
 	).Finish(
 		envfuncs.DeleteNamespace(namespace),
 		envfuncs.DestroyCluster(clusterName),
@@ -111,9 +113,6 @@ func TestController(t *testing.T) {
 	var c *rest.Config
 	f := features.New("Setup").
 		Setup(e2e.Logger("test")).
-		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			return ctx
-		}).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			c = SetSAToken(ctx, t, cfg)
 			r, err := resources.New(cfg.Client().RESTConfig())
@@ -174,9 +173,56 @@ func TestController(t *testing.T) {
 				return ctx
 			}
 
-			// chartInspector := chartinspector.NewChartInspector(chartInspectorUrl)
-			// rbacgen := rbacgen.NewRBACGen("test-sa", altNamespace, &chartInspector)
-			handler = NewHandler(cfg.Client().RESTConfig(), log, pig, *event.NewAPIRecorder(rec), pluralizer, chartInspectorUrl, "test-sa", altNamespace)
+			// --- start chart-inspector mock server ---
+			mux := http.NewServeMux()
+			mux.HandleFunc("/resources", func(w http.ResponseWriter, r *http.Request) {
+				resources := []map[string]string{
+					{
+						"group":     "finops.krateo.io",
+						"version":   "v1alpha1",
+						"resource":  "datapresentationazures",
+						"name":      "focus-1-focus-data-presentation-azure",
+						"namespace": "demo-system",
+					},
+					{
+						"group":     "finops.krateo.io",
+						"version":   "v1alpha1",
+						"resource":  "datapresentationazures",
+						"name":      "focus-1-focus-data-presentation-azure",
+						"namespace": "demo-system",
+					},
+				}
+				enc := json.NewEncoder(w)
+				w.Header().Set("Content-Type", "application/json")
+				_ = enc.Encode(resources)
+			})
+
+			go func() {
+				// ignore error on ListenAndServe; test process will end it
+				_ = http.ListenAndServe(":30007", mux)
+			}()
+			// give server a moment to start
+			time.Sleep(200 * time.Millisecond)
+			// --- end chart-inspector mock server ---
+
+			pig, err = archive.Dynamic(cfg.Client().RESTConfig(), pluralizer)
+			if err != nil {
+				t.Error("Creating chart url info getter.", "error", err)
+				return ctx
+			}
+
+			/* use the mock URL directly when creating the handler */
+			chartInspectorMockURL := "http://localhost:30007"
+
+			rec, err = eventrecorder.Create(ctx, cfg.Client().RESTConfig(), "test", nil)
+			if err != nil {
+				t.Error("Creating event recorder.", "error", err)
+				return ctx
+			}
+
+			handler = NewHandler(cfg.Client().RESTConfig(), log, pig, *event.NewAPIRecorder(rec), pluralizer, chartInspectorMockURL, "test-sa", altNamespace)
+
+			// handler = NewHandler(cfg.Client().RESTConfig(), log, pig, *event.NewAPIRecorder(rec), pluralizer, chartInspectorUrl, "test-sa", altNamespace)
 
 			resli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositiondefinitions")), "*.yaml")
 			if err != nil {
