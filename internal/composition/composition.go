@@ -35,7 +35,7 @@ var (
 	helmRegistryConfigPath = env.String(helmRegistryConfigPathEnvVar, helmclient.DefaultRegistryConfigPath)
 	krateoNamespace        = env.String(krateoNamespaceEnvVar, krateoNamespaceDefault)
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
-	helmMaxHistory         = env.Int(helmMaxHistoryEnvvar, 10)
+	helmMaxHistory         = env.Int(helmMaxHistoryEnvvar, 3)
 )
 
 const (
