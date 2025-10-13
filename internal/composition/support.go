@@ -66,14 +66,15 @@ const (
 )
 
 type statusManagerOpts struct {
-	force         bool
-	pluralizer    pluralizer.PluralizerInterface
-	chartURL      string
-	chartVersion  string
-	resources     []objectref.ObjectRef
-	digest        string
-	message       string
-	conditionType ConditionType
+	force          bool
+	pluralizer     pluralizer.PluralizerInterface
+	chartURL       string
+	chartVersion   string
+	resources      []objectref.ObjectRef
+	previousDigest string
+	digest         string
+	message        string
+	conditionType  ConditionType
 }
 
 func setStatus(mg *unstructured.Unstructured, opts *statusManagerOpts) error {
@@ -90,9 +91,24 @@ func setStatus(mg *unstructured.Unstructured, opts *statusManagerOpts) error {
 		setManagedResources(mg, managed)
 	}
 
-	err := maps.SetNestedField(mg.Object, opts.digest, "status", "digest")
+	err := maps.SetNestedField(mg.Object, opts.previousDigest, "status", "previousDigest")
+	if err != nil {
+		return fmt.Errorf("setting previous digest in status: %w", err)
+	}
+
+	err = maps.SetNestedField(mg.Object, opts.digest, "status", "digest")
 	if err != nil {
 		return fmt.Errorf("setting digest in status: %w", err)
+	}
+
+	err = maps.SetNestedField(mg.Object, opts.chartURL, "status", "helmChartUrl")
+	if err != nil {
+		return fmt.Errorf("setting chart URL in status: %w", err)
+	}
+
+	err = maps.SetNestedField(mg.Object, opts.chartVersion, "status", "helmChartVersion")
+	if err != nil {
+		return fmt.Errorf("setting chart version in status: %w", err)
 	}
 
 	switch opts.conditionType {

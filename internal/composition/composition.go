@@ -251,7 +251,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if previousDigest == "" {
 		// Calculate the digest from the previous release if not present in status
 		log.Debug("Previous digest not found in status, calculating from previous release")
-		_, digest, err = helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace(), clientset)
+		_, previousDigest, err = helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace(), clientset)
 		if err != nil {
 			return controller.ExternalObservation{}, fmt.Errorf("getting resources from previous release: %w", err)
 		}
@@ -273,14 +273,15 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 
 	err = setStatus(mg, &statusManagerOpts{
-		pluralizer:    h.pluralizer,
-		force:         false,
-		resources:     nil, // we don't need to set resources here as they are already set when a resource is created/updated
-		digest:        digest,
-		message:       "Composition is up-to-date",
-		chartURL:      pkg.URL,
-		chartVersion:  pkg.Version,
-		conditionType: ConditionTypeAvailable,
+		pluralizer:     h.pluralizer,
+		force:          false,
+		resources:      nil, // we don't need to set resources here as they are already set when a resource is created/updated
+		previousDigest: previousDigest,
+		digest:         digest,
+		message:        "Composition is up-to-date",
+		chartURL:       pkg.URL,
+		chartVersion:   pkg.Version,
+		conditionType:  ConditionTypeAvailable,
 	})
 	if err != nil {
 		return controller.ExternalObservation{}, err
@@ -402,14 +403,15 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	err = setStatus(mg, &statusManagerOpts{
-		pluralizer:    h.pluralizer,
-		force:         true,
-		resources:     all,
-		digest:        digest,
-		message:       "Composition created",
-		chartURL:      pkg.URL,
-		chartVersion:  pkg.Version,
-		conditionType: ConditionTypeAvailable,
+		pluralizer:     h.pluralizer,
+		force:          true,
+		resources:      all,
+		previousDigest: "",
+		digest:         digest,
+		message:        "Composition created",
+		chartURL:       pkg.URL,
+		chartVersion:   pkg.Version,
+		conditionType:  ConditionTypeAvailable,
 	})
 	if err != nil {
 		return fmt.Errorf("setting status: %w", err)
@@ -479,6 +481,11 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("finding helm release: %w", err)
 	}
 
+	previousDigest, err := maps.NestedString(mg.Object, "status", "digest")
+	if err != nil {
+		return fmt.Errorf("getting previous digest from status: %w", err)
+	}
+
 	all, digest, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace(), clientset)
 	if err != nil {
 		return fmt.Errorf("getting resources from release: %w", err)
@@ -495,13 +502,14 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	h.eventRecorder.Event(mg, event.Normal(reasonUpdated, "Update", fmt.Sprintf("Updated composition: %s", mg.GetName())))
 
 	statusOpts := &statusManagerOpts{
-		pluralizer:   h.pluralizer,
-		force:        false,
-		resources:    all,
-		digest:       digest,
-		message:      "Composition values updated",
-		chartURL:     pkg.URL,
-		chartVersion: pkg.Version,
+		pluralizer:     h.pluralizer,
+		force:          false,
+		resources:      all,
+		digest:         digest,
+		previousDigest: previousDigest,
+		message:        "Composition values updated",
+		chartURL:       pkg.URL,
+		chartVersion:   pkg.Version,
 	}
 
 	if compositionMeta.IsGracefullyPaused(mg) {
