@@ -442,6 +442,7 @@ func TestCalculateReleaseName_DifferentGVKProducesDifferentHash(t *testing.T) {
 		Version: "v1",
 		Kind:    "KindA",
 	})
+	obj1.SetUID(types.UID("5a47edd9-c710-4b4b-b5ea-b6cdf9fc1f58"))
 
 	obj2 := unstructured.Unstructured{}
 	obj2.SetName(name)
@@ -450,6 +451,7 @@ func TestCalculateReleaseName_DifferentGVKProducesDifferentHash(t *testing.T) {
 		Version: "v1",
 		Kind:    "KindA",
 	})
+	obj2.SetUID(types.UID("b3d6f4e2-1c2d-4e5f-9a6b-7c8d9e0f1a2b"))
 
 	r1 := CalculateReleaseName(&obj1)
 	r2 := CalculateReleaseName(&obj2)
@@ -464,10 +466,12 @@ func TestCalculateReleaseName_NameIncludedAndUniqueForDifferentNames(t *testing.
 	objA := unstructured.Unstructured{}
 	objA.SetName("alpha")
 	objA.SetGroupVersionKind(gvk)
+	objA.SetUID(types.UID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
 
 	objB := unstructured.Unstructured{}
 	objB.SetName("beta")
 	objB.SetGroupVersionKind(gvk)
+	objB.SetUID(types.UID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
 
 	ra := CalculateReleaseName(&objA)
 	rb := CalculateReleaseName(&objB)
@@ -480,5 +484,24 @@ func TestCalculateReleaseName_NameIncludedAndUniqueForDifferentNames(t *testing.
 	}
 	if ra == rb {
 		t.Fatalf("Expected different release names for different resource names but got same: %q", ra)
+	}
+}
+
+func TestCalculateReleaseName_UIDNotFound(t *testing.T) {
+	obj := unstructured.Unstructured{}
+	obj.SetName("no-uid-resource")
+	obj.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "test.group",
+		Version: "v1",
+		Kind:    "NoUIDKind",
+	})
+	// Not setting UID
+
+	releaseName := CalculateReleaseName(&obj)
+
+	fmt.Println(releaseName)
+
+	if !strings.HasPrefix(releaseName, "no-uid-resource-") {
+		t.Fatalf("CalculateReleaseName result %q does not have expected prefix %q", releaseName, "no-uid-resource-")
 	}
 }

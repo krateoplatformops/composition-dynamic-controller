@@ -35,6 +35,11 @@ const (
 
 func CalculateReleaseName(o runtime.Object) string {
 	obj := o.(metav1.Object)
+	uid := obj.GetUID()
+	if uid == "" {
+		// Generate random string if UID is not set
+		return fmt.Sprintf("%s-%s", obj.GetName(), rand.SafeEncodeString(rand.String(8)))
+	}
 	hashstr := rand.SafeEncodeString(string(obj.GetUID())[:8])
 	return fmt.Sprintf("%s-%s", obj.GetName(), hashstr)
 }
