@@ -112,7 +112,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		DynamicClient: dyn,
 	}
 
-	compositionMeta.SetReleaseName(mg, mg.GetName())
+	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg))
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
 		log.Debug("Composition is gracefully paused, skipping observe.")
 		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Observe", "Reconciliation is paused via the gracefully paused annotation."))
@@ -152,7 +152,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, fmt.Errorf("getting helm client: %w", err)
 	}
 
-	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
+	rel, err := helmchart.FindRelease(hc, compositionMeta.GetReleaseName(mg))
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("finding helm release: %w", err)
 	}
@@ -168,7 +168,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		log.Debug("Composition stuck install or upgrade in progress. Rolling back to previous release before re-attempting.")
 		// Rollback to previous release
 		err = hc.RollbackRelease(&helmclient.ChartSpec{
-			ReleaseName: meta.GetReleaseName(mg),
+			ReleaseName: compositionMeta.GetReleaseName(mg),
 			Namespace:   mg.GetNamespace(),
 			Repo:        pkg.Repo,
 			ChartName:   pkg.URL,
@@ -189,7 +189,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
-		WithBaseName(meta.GetReleaseName(mg)).
+		WithBaseName(compositionMeta.GetReleaseName(mg)).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
 			CompositionNamespace:           mg.GetNamespace(),
@@ -324,7 +324,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	compositionMeta.SetReleaseName(mg, mg.GetName())
+	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg))
 	mg, err = tools.Update(ctx, mg, updateOpts)
 	if err != nil {
 		return fmt.Errorf("updating cr with values: %w", err)
@@ -347,7 +347,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
-		WithBaseName(meta.GetReleaseName(mg)).
+		WithBaseName(compositionMeta.GetReleaseName(mg)).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
 			CompositionNamespace:           mg.GetNamespace(),
@@ -476,7 +476,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("getting helm client: %w", err)
 	}
 
-	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
+	rel, err := helmchart.FindRelease(hc, compositionMeta.GetReleaseName(mg))
 	if err != nil {
 		return fmt.Errorf("finding helm release: %w", err)
 	}
@@ -581,7 +581,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	chartSpec := helmclient.ChartSpec{
-		ReleaseName: meta.GetReleaseName(mg),
+		ReleaseName: compositionMeta.GetReleaseName(mg),
 		Namespace:   mg.GetNamespace(),
 		ChartName:   pkg.URL,
 		Version:     pkg.Version,
@@ -589,7 +589,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	// Check if the release exists before uninstalling
-	rel, err := helmchart.FindRelease(hc, meta.GetReleaseName(mg))
+	rel, err := helmchart.FindRelease(hc, compositionMeta.GetReleaseName(mg))
 	if err != nil {
 		return fmt.Errorf("finding helm release: %w", err)
 	}
@@ -604,12 +604,12 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("uninstalling helm chart: %w", err)
 	}
 
-	rel, err = helmchart.FindRelease(hc, meta.GetReleaseName(mg))
+	rel, err = helmchart.FindRelease(hc, compositionMeta.GetReleaseName(mg))
 	if err != nil {
 		return fmt.Errorf("finding helm release: %w", err)
 	}
 	if rel != nil {
-		return fmt.Errorf("composition not deleted, release %s still exists", meta.GetReleaseName(mg))
+		return fmt.Errorf("composition not deleted, release %s still exists", compositionMeta.GetReleaseName(mg))
 	}
 
 	log.Debug("Uninstalling RBAC", "package", pkg.URL)
@@ -622,7 +622,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
-		WithBaseName(meta.GetReleaseName(mg)).
+		WithBaseName(compositionMeta.GetReleaseName(mg)).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
 			CompositionNamespace:           mg.GetNamespace(),
