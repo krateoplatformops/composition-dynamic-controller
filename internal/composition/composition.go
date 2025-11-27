@@ -208,7 +208,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, fmt.Errorf("installing rbac: %w", err)
 	}
 
-	tracer := tracer.NewTracer(ctx, true)
+	tracer := tracer.NewTracer(ctx, meta.IsVerbose(mg))
 	hc, clientset, err := h.helmClientForResourceWithTransportWrapper(mg, pkg.RegistryAuth, func(rt http.RoundTripper) http.RoundTripper {
 		return tracer.WithRoundTripper(rt)
 	})
