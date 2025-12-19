@@ -203,8 +203,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			CompositionDefintionGVR:        pkg.CompositionDefinitionInfo.GVR,
 		})
 	if err != nil {
-		reason := fmt.Sprintf("Generating RBAC failed: %v", err)
-		unstructuredtools.SetConditions(mg, condition.FailWithReason(reason))
+		retErr := fmt.Errorf("generating RBAC using chart-inspector: %w", err)
+		condition := condition.Unavailable()
+		condition.Message = retErr.Error()
+		unstructuredtools.SetConditions(mg, condition)
 		_, err = tools.UpdateStatus(ctx, mg, updateOpts)
 		if err != nil {
 			return controller.ExternalObservation{}, fmt.Errorf("updating status after failure: %w", err)
@@ -214,13 +216,15 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	rbInstaller := rbac.NewRBACInstaller(dyn)
 	err = rbInstaller.ApplyRBAC(generated)
 	if err != nil {
-		reason := fmt.Sprintf("Applying RBAC failed: %v", err)
-		unstructuredtools.SetConditions(mg, condition.FailWithReason(reason))
+		retErr := fmt.Errorf("applying rbac: %w", err)
+		condition := condition.Unavailable()
+		condition.Message = retErr.Error()
+		unstructuredtools.SetConditions(mg, condition)
 		_, err = tools.UpdateStatus(ctx, mg, updateOpts)
 		if err != nil {
 			return controller.ExternalObservation{}, fmt.Errorf("updating status after failure: %w", err)
 		}
-		return controller.ExternalObservation{}, fmt.Errorf("installing rbac: %w", err)
+		return controller.ExternalObservation{}, retErr
 	}
 
 	tracer := tracer.NewTracer(ctx, meta.IsVerbose(mg))
@@ -253,13 +257,15 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 
 	upgradedRel, err := helmchart.Update(ctx, opts)
 	if err != nil {
-		reason := fmt.Sprintf("Updating helm chart failed: %v", err)
-		unstructuredtools.SetConditions(mg, condition.FailWithReason(reason))
+		retErr := fmt.Errorf("updating helm chart: %w", err)
+		condition := condition.Unavailable()
+		condition.Message = retErr.Error()
+		unstructuredtools.SetConditions(mg, condition)
 		_, err = tools.UpdateStatus(ctx, mg, updateOpts)
 		if err != nil {
 			return controller.ExternalObservation{}, fmt.Errorf("updating status after failure: %w", err)
 		}
-		return controller.ExternalObservation{}, fmt.Errorf("updating helm chart: %w", err)
+		return controller.ExternalObservation{}, retErr
 	}
 
 	_, digest, err := helmchart.GetResourcesRefFromRelease(upgradedRel, mg.GetNamespace(), clientset)
