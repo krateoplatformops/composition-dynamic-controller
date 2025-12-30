@@ -159,15 +159,18 @@ func (g *dynamicGetter) Get(uns *unstructured.Unstructured) (*Info, error) {
 			Namespace(cdInfo.Namespace).
 			Get(context.Background(), cdInfo.Name, metav1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("error getting composition definition '%s' in namespace '%s' with gvr: %s: %w", cdInfo.Name, cdInfo.Namespace, cdInfo.GVR.String(), err)
-		}
-		version, kind, err := getChartVersionKind(compositionDefinition)
-		if err != nil {
-			return nil, fmt.Errorf("error getting chart version and kind from composition definition '%s' in namespace '%s': %w", cdInfo.Name, cdInfo.Namespace, err)
-		}
-		if version != uns.GetLabels()[compositionMeta.CompositionVersionLabel] || kind != uns.GetKind() {
-			g.logger.Debug("Labels do not match composition definition", "compositionDefinitionName", cdInfo.Name, "compositionDefinitionNamespace", cdInfo.Namespace, "gvr", gvr.String(), "expectedVersion", uns.GetLabels()[compositionMeta.CompositionVersionLabel], "foundVersion", version, "expectedKind", uns.GetKind(), "foundKind", kind)
+			g.logger.Warn("Error getting composition definition", "error", err.Error(), "compositionDefinitionName", cdInfo.Name, "compositionDefinitionNamespace", cdInfo.Namespace, "gvr", cdInfo.GVR.String())
 			compositionDefinition = nil
+		}
+		if compositionDefinition != nil {
+			version, kind, err := getChartVersionKind(compositionDefinition)
+			if err != nil {
+				return nil, fmt.Errorf("error getting chart version and kind from composition definition '%s' in namespace '%s': %w", cdInfo.Name, cdInfo.Namespace, err)
+			}
+			if version != uns.GetLabels()[compositionMeta.CompositionVersionLabel] || kind != uns.GetKind() {
+				g.logger.Warn("Labels do not match composition definition", "compositionDefinitionName", cdInfo.Name, "compositionDefinitionNamespace", cdInfo.Namespace, "gvr", gvr.String(), "expectedVersion", uns.GetLabels()[compositionMeta.CompositionVersionLabel], "foundVersion", version, "expectedKind", uns.GetKind(), "foundKind", kind)
+				compositionDefinition = nil
+			}
 		}
 	}
 
