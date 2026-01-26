@@ -109,7 +109,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) (*release.R
 		return nil, nil, err
 	}
 
-	all, err := GetResourcesRefFromRelease(rel, opts.Resource.GetNamespace())
+	all, err := GetResourcesRefFromRelease(rel, opts.Resource.GetNamespace(), false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get resources from release: %w", err)
 	}
@@ -117,7 +117,7 @@ func RenderTemplate(ctx context.Context, opts RenderTemplateOptions) (*release.R
 	return rel, all, nil
 }
 
-func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) ([]objectref.ObjectRef, error) {
+func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string, verbose bool) ([]objectref.ObjectRef, error) {
 	out := new(bytes.Buffer)
 
 	// We ignore a potential error here because, when the --debug flag was specified,
@@ -135,6 +135,10 @@ func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) (
 		fmt.Fprintf(out, "%s", manifests.String())
 	}
 
+	if verbose {
+		fmt.Printf("Rendered Helm Chart YAML:\n%s\n", out.String())
+	}
+
 	all := []objectref.ObjectRef{}
 	tpl := out.Bytes()
 
@@ -147,7 +151,10 @@ func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) (
 
 		var rawObj runtime.RawExtension
 		if err := decoder.Decode(&rawObj); err != nil {
-			return all, err
+			if verbose {
+				fmt.Printf("Failed to decode rendered template spec:\n%s\nError: %v\n", spec, err)
+			}
+			return all, fmt.Errorf("failed to decode rendered template: %w", err)
 		}
 		if rawObj.Raw == nil {
 			continue
@@ -155,12 +162,18 @@ func GetResourcesRefFromRelease(rel *release.Release, defaultNamespace string) (
 
 		obj, gvk, err := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme).Decode(rawObj.Raw, nil, nil)
 		if err != nil {
-			return all, err
+			if verbose {
+				fmt.Printf("Failed to decode rendered template to object:\n%s\nError: %v\n", spec, err)
+			}
+			return all, fmt.Errorf("failed to decode rendered template to unstructured: %w", err)
 		}
 
 		unstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 		if err != nil {
-			return all, err
+			if verbose {
+				fmt.Printf("Failed to convert to unstructured map:\n%s\nError: %v\n", spec, err)
+			}
+			return all, fmt.Errorf("failed to convert to unstructured map: %w", err)
 		}
 
 		unstructuredObj := &unstructured.Unstructured{Object: unstructuredMap}

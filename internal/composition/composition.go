@@ -178,6 +178,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 			CompositionDefinitionName:      pkg.CompositionDefinitionInfo.Name,
 			CompositionDefinitionNamespace: pkg.CompositionDefinitionInfo.Namespace,
 			CompositionDefintionGVR:        pkg.CompositionDefinitionInfo.GVR,
+			Verbose:                        meta.IsVerbose(mg),
 		})
 	if err != nil {
 		log.Error(err, "Generating RBAC using chart-inspector")
@@ -316,6 +317,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 			CompositionDefinitionName:      pkg.CompositionDefinitionInfo.Name,
 			CompositionDefinitionNamespace: pkg.CompositionDefinitionInfo.Namespace,
 			CompositionDefintionGVR:        pkg.CompositionDefinitionInfo.GVR,
+			Verbose:                        meta.IsVerbose(mg),
 		})
 	if err != nil {
 		log.Error(err, "Generating RBAC using chart-inspector")
@@ -362,7 +364,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 	log.Debug("Installing composition package", "package", pkg.URL)
 
-	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace())
+	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace(), meta.IsVerbose(mg))
 	if err != nil {
 		log.Error(err, "Getting resources from release")
 		return fmt.Errorf("getting resources from release: %w", err)
@@ -440,7 +442,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return err
 	}
 
-	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace())
+	all, err := helmchart.GetResourcesRefFromRelease(rel, mg.GetNamespace(), meta.IsVerbose(mg))
 	if err != nil {
 		log.Error(err, "Getting resources from release")
 		return fmt.Errorf("getting resources from release: %w", err)
@@ -588,6 +590,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 			CompositionDefinitionName:      pkg.CompositionDefinitionInfo.Name,
 			CompositionDefinitionNamespace: pkg.CompositionDefinitionInfo.Namespace,
 			CompositionDefintionGVR:        pkg.CompositionDefinitionInfo.GVR,
+			Verbose:                        meta.IsVerbose(mg),
 		})
 	rbInstaller := rbac.NewRBACInstaller(h.dynamicClient)
 	err = rbInstaller.UninstallRBAC(generated)

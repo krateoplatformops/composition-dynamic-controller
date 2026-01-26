@@ -391,6 +391,299 @@ func TestFindAnyRelease(t *testing.T) {
 	testenv.Test(t, f)
 }
 
+// func TestGetResourcesRefFromRelease(t *testing.T) {
+// 	f := features.New("GetResourcesRefFromRelease").
+// 		Setup(e2e.Logger("test")).
+// 		Assess("SingleFileManifest", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+// 			// Initialize Helm Client to get the RESTMapper from the environment
+
+// 			// _, err = helmclient.NewCachedClientFromRestConf(&helmclient.RestConfClientOptions{
+// 			// 	RestConfig: cfg.Client().RESTConfig(),
+// 			// }, clientSet)
+// 			// if err != nil {
+// 			// 	t.Fatalf("failed to create helm client: %v", err)
+// 			// }
+
+// 			// Use Case: Chart with only one file/resource to render
+// 			rel := &release.Release{
+// 				Namespace: "application-group",
+// 				Name:      "single-resource-rel",
+// 				Manifest: `
+// ---
+// # Source: application-group/templates/argocd/serviceaccount.argocd.yaml
+// apiVersion: v1
+// kind: ServiceAccount
+// metadata:
+//   # Using .Values.applicationGroupName since Microservice template need to reference
+//   #   this resource (and in Microservice template cannot obtain .Release.Name of application-group)
+//   name: "ag-test-au-260-argocd"
+//   namespace: "krateo-system"
+//   annotations:
+//     helm.sh/resource-policy: keep
+//     krateo.io/description: "Create Service Account to access ArgoCD pipelines"
+//   labels:
+//     helm.sh/chart: "application-group-1.6.0-rc.2"
+//     app.kubernetes.io/name: "test-au-260"
+//     app.kubernetes.io/instance: "test"
+//     app.kubernetes.io/managed-by: "Helm"
+// ...
+// ---
+// # Source: application-group/templates/argocd/secret.argocd-sa.yaml
+// apiVersion: v1
+// kind: Secret
+// metadata:
+//   name: "ag-test-argocd-sa"
+//   namespace: "krateo-system"
+//   annotations:
+//     helm.sh/resource-policy: keep
+//     krateo.io/description: "Create Service Account token to access ArgoCD pipelines"
+//     kubernetes.io/service-account.name: "ag-test-au-260-argocd"
+//   labels:
+//     helm.sh/chart: "application-group-1.6.0-rc.2"
+//     app.kubernetes.io/name: "test-au-260"
+//     app.kubernetes.io/instance: "test"
+//     app.kubernetes.io/managed-by: "Helm"
+// type: "kubernetes.io/service-account-token"
+// ...
+// ---
+// # Source: application-group/templates/argocd/appproject.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1240
+// ---
+// # Source: application-group/templates/argocd/endpoint.argocd.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 3780
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/argocd/pipelinepermission.argocd.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 3877
+// # [INFO] @dependsOn "endpoint/ag-test-argocd"
+// ---
+// # Source: application-group/templates/argocd/secret.argocd-sa.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 3647
+// ---
+// # Source: application-group/templates/argocd/serviceaccount.argocd.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 3604
+// ---
+// # Source: application-group/templates/endpoint/endpoint.to-share.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 701,776,850
+// # [INFO] @dependsOn "teamproject/ag-test"
+
+// ciao
+// ---
+// # Source: application-group/templates/permission/pipelinepermission.endpoint-to-share.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 3960,4042,4124
+//     # [INFO] @dependsOn "ag-test-test-connection-docker"
+//     # [INFO] @dependsOn "ag-test-test-connection-pbi-user"
+//     # [INFO] @dependsOn "ag-test-test-connection-pbi-sp"
+// ---
+// # Source: application-group/templates/permission/pipelinepermission.gitrepository-pipeline-templates.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 5202
+// # [INFO] @dependsOn "gitrepository/ag-test-pipeline-templates"
+// ---
+// # Source: application-group/templates/permission/pipelinepermission.gitrepository-pipeline.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1672
+// # [INFO] @dependsOn "gitrepository/ag-test-pipeline"
+// ---
+// # Source: application-group/templates/pipeline/environment.environments.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 188,258,328,398
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/repository/configmap.pipeline.global.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1754
+// # [INFO] @dependsOn "gitrepository/ag-test-pipeline"
+// ---
+// # Source: application-group/templates/repository/feed.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 468
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/repository/feedpermission.bsearchitettura.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1088
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/repository/feedpermission.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1163
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/repository/gitrepository.pipeline-templates.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 924
+// # [INFO] @dependsOn "teamproject/ag-test"
+// Test
+// ---
+// # Source: application-group/templates/repository/gitrepository.pipeline.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1288
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/repository/repo.pipeline.global.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 1804
+// # [INFO] @dependsOn "gitrepository/ag-test-pipeline"
+// ---
+// # Source: application-group/templates/repository/repositorypermission.pipeline-templates.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 997
+// # [INFO] @dependsOn "gitrepository/ag-test-pipeline-templates"
+// ---
+// # Source: application-group/templates/teamproject/teamproject.bsearchitettura.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 572
+// ---
+// # Source: application-group/templates/teamproject/teamproject.bsetoolchaindevops.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 637
+// ---
+// # Source: application-group/templates/teamproject/teamproject.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 120
+// ---
+// # Source: application-group/templates/user/checkconfiguration.group-approvers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4700
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.add-user-to-team-developer.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 5128
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.admin.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4208
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.approvers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4632
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.backbone-default-approvers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4482
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.bsearchitetturait-readers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 5288
+// ---
+// # Source: application-group/templates/user/group.bsebackbone-admin.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4276
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.bsebackbone-operations.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4855
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.bsebackbone-support.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4482
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.contributors.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4788
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.developers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4554
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.pr-approvers.yaml
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.readers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4348
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/group.toolchaindevops-team.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4415
+// ---
+// # Source: application-group/templates/user/groups.add-aad-to-approvers-group.yaml
+// # End of if eq $group.description "developers"      # End of with $relativeContext
+//   # [INFO] @dependsOn "group/AG_TEST_AU_260_APPROVERS"  # End of if $entraIdGroup    # End of if eq $group.description "developers"      # End of with $relativeContext    # End of if eq $group.description "developers"      # End of with $relativeContext        # End of range $index, $group
+// ---
+// # Source: application-group/templates/user/groups.add-aad-to-developers-team.yaml
+// # [INFO] @dependsOn "team/AG_TEST_AU_260_DEVELOPERS"  # End of if $entraIdGroup    # End of if eq $group.description "developers"      # End of with $relativeContext    # End of if eq $group.description "developers"      # End of with $relativeContext    # End of if eq $group.description "developers"      # End of with $relativeContext        # End of range $index, $group
+// ---
+// # Source: application-group/templates/user/groups.add-aad-to-pr-approvers-team.yaml
+// # End of if eq $group.description "developers"      # End of with $relativeContext    # End of if eq $group.description "developers"      # End of with $relativeContext
+//   # [INFO] @dependsOn "team/AG_TEST_AU_260_PR_APPROVERS"  # End of if $entraIdGroup    # End of if eq $group.description "developers"      # End of with $relativeContext        # End of range $index, $group
+// ---
+// # Source: application-group/templates/user/team.developers.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 5045
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/team.pr-approver.yaml
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/user.add-azdevopsconn-to-group-approvers-admin.yaml
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/user/user.add-bs-to-group-contributors.yaml
+// # [DEBUG] krateo-v1 gruppoapplicativo (@commit 955ac2f) @line 4929
+// # [INFO] @dependsOn "teamproject/ag-test"
+// ---
+// # Source: application-group/templates/argocd/appproject.yaml
+// apiVersion: argoproj.io/v1alpha1
+// kind: AppProject
+// metadata:
+//   # Using applicationGroupName since this value need to be referenced from Microservices
+//   name: "test-au-260"
+//   namespace: "krateo-system"
+//   annotations:
+//     helm.sh/resource-policy: keep
+//     backbone.cloud/description: "ArgoCD project configuration"
+//     krateo.io/connector-verbose: "false"
+//   labels:
+//     helm.sh/chart: "application-group-1.6.0-rc.2"
+//     app.kubernetes.io/name: "test-au-260"
+//     app.kubernetes.io/instance: "test"
+//     app.kubernetes.io/managed-by: "Helm"
+// spec:
+//   clusterResourceWhitelist:
+//     - group: "*"
+//       kind: "*"
+//   destinations:
+//     - name: "*"
+//       namespace: "*"
+//       server: "*"
+//   namespaceResourceWhitelist:
+//     - group: "*"
+//       kind: "*"
+//   sourceRepos:
+//     - "*"
+//   sourceNamespaces:
+//     - "krateo-system"
+// `,
+// 			}
+
+// 			refs, err := GetResourcesRefFromRelease(rel, "default", true)
+// 			assert.NoError(t, err)
+// 			// assert.Len(t, refs, 82, "Should find exactly one resource reference")
+
+// 			b, _ := json.MarshalIndent(refs, "", "  ")
+// 			t.Logf("Extracted Resource Refs: %s", string(b))
+
+// 			return ctx
+// 		}).
+// 		Assess("ClusterScopedResource", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+// 			// clientSet, err := helmclient.NewCachedClients(cfg.Client().RESTConfig())
+// 			// if err != nil {
+// 			// 	t.Fatalf("failed to create cached clients: %v", err)
+// 			// }
+// 			// _, _ = helmclient.NewClientFromRestConf(&helmclient.RestConfClientOptions{
+// 			// 	RestConfig: cfg.Client().RESTConfig(),
+// 			// })
+
+// 			// Testing resource scope logic (Namespace should be empty for ClusterRole)
+// 			rel := &release.Release{
+// 				Name: "cluster-resource-rel",
+// 				Manifest: `
+// apiVersion: rbac.authorization.k8s.io/v1
+// kind: ClusterRole
+// metadata:
+//   name: my-cluster-role
+// `,
+// 			}
+
+// 			refs, err := GetResourcesRefFromRelease(rel, "some-namespace", true)
+// 			assert.NoError(t, err)
+// 			assert.Len(t, refs, 1)
+
+// 			if len(refs) > 0 {
+// 				assert.Equal(t, "", refs[0].Namespace, "Cluster-scoped resources should have empty namespace")
+// 			}
+
+// 			return ctx
+// 		}).Feature()
+
+// 	testenv.Test(t, f)
+// }
+
 func createDummyResource() *unstructured.Unstructured {
 	data := map[string]interface{}{
 		"like":     false,

@@ -25,6 +25,7 @@ type Parameters struct {
 	CompositionDefinitionName      string                      // The name of the composition definition. Required.
 	CompositionDefinitionNamespace string                      // The namespace of the composition definition.
 	CompositionDefintionGVR        schema.GroupVersionResource // The GVR of the composition definition.
+	Verbose                        bool                        // Whether to enable verbose logging.
 }
 
 type RBACGen struct {
@@ -70,6 +71,13 @@ func (r *RBACGen) Generate(params Parameters) (*rbac.RBAC, error) {
 		ClusterRoleBinding: rbac.InitClusterRoleBinding(r.baseName, r.baseName, r.saName, r.saNamespace),
 		Namespaced:         map[string]rbac.Namespaced{},
 		Namespaces:         []*corev1.Namespace{},
+	}
+
+	if params.Verbose {
+		fmt.Printf("Resources extracted for RBAC generation:\n")
+		for _, res := range resources {
+			fmt.Printf("- %s/%s (Group: %s, Version: %s, Resource: %s)\n", res.Namespace, res.Name, res.Group, res.Version, res.Resource)
+		}
 	}
 
 	for _, resource := range resources {
