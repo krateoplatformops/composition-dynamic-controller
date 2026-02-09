@@ -23,7 +23,10 @@ import (
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/rbac"
 	"github.com/krateoplatformops/plumbing/env"
 	helmconfig "github.com/krateoplatformops/plumbing/helm"
+	"github.com/krateoplatformops/plumbing/helm/utils"
+	helmutils "github.com/krateoplatformops/plumbing/helm/utils"
 	"github.com/krateoplatformops/plumbing/helm/v3"
+
 	"github.com/krateoplatformops/plumbing/kubeutil/event"
 	"github.com/krateoplatformops/plumbing/maps"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"
@@ -244,20 +247,27 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, fmt.Errorf("getting helm client: %w", err)
 	}
 
-	values, ok, err := maps.NestedMap(mg.Object, "spec")
+	values, err := helmutils.ValuesFromSpec(mg)
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("getting spec values: %w", err)
 	}
-	if !ok {
-		values = map[string]interface{}{}
+	err = values.InjectGlobalValues(mg, h.pluralizer, krateoNamespace)
+	if err != nil {
+		return controller.ExternalObservation{}, fmt.Errorf("injecting global values: %w", err)
+	}
+	postrenderLabels, err := utils.LabelPostRenderFromSpec(mg, h.pluralizer, krateoNamespace)
+	if err != nil {
+		return controller.ExternalObservation{}, fmt.Errorf("creating label post renderer: %w", err)
 	}
 	upgradedRel, err := hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
 		ActionConfig: &helmconfig.ActionConfig{
-			ChartVersion: pkg.Version,
-			ChartName:    pkg.Repo,
-			Username:     pkg.Auth.Username,
-			Password:     pkg.Auth.Password,
-			Values:       values,
+			ChartVersion:          pkg.Version,
+			ChartName:             pkg.Repo,
+			Username:              pkg.Auth.Username,
+			Password:              pkg.Auth.Password,
+			InsecureSkipTLSverify: pkg.InsecureSkipTLSverify,
+			Values:                values,
+			PostRenderer:          postrenderLabels,
 		},
 		MaxHistory: helmMaxHistory,
 	})
@@ -320,10 +330,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, err
 	}
 
-	// _, err = tools.UpdateStatus(ctx, mg, updateOpts)
-	// if err != nil {
-	// 	return controller.ExternalObservation{}, err
-	// }
+	_, err = tools.UpdateStatus(ctx, mg, updateOpts)
+	if err != nil {
+		return controller.ExternalObservation{}, err
+	}
 
 	log.Debug("Composition Observed - installed", "package", pkg.URL)
 
@@ -405,24 +415,49 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("creating helm client: %w", err)
 	}
 
-	values, ok, err := maps.NestedMap(mg.Object, "spec")
+	values, err := helmutils.ValuesFromSpec(mg)
 	if err != nil {
 		return fmt.Errorf("getting spec values: %w", err)
 	}
-	if !ok {
-		values = map[string]interface{}{}
-	}
-	rel, err := hc.Install(ctx, compositionMeta.GetReleaseName(mg), pkg.URL, &helmconfig.InstallConfig{
-		ActionConfig: &helmconfig.ActionConfig{
-			ChartVersion: pkg.Version,
-			ChartName:    pkg.Repo,
-			Values:       values,
-		},
-	})
-
+	err = values.InjectGlobalValues(mg, h.pluralizer, krateoNamespace)
 	if err != nil {
-		return fmt.Errorf("installing helm chart: %w", err)
+		return fmt.Errorf("injecting global values: %w", err)
 	}
+	postrenderLabels, err := utils.LabelPostRenderFromSpec(mg, h.pluralizer, krateoNamespace)
+	if err != nil {
+		return fmt.Errorf("creating label post renderer: %w", err)
+	}
+
+	actionConfig := &helmconfig.ActionConfig{
+		ChartVersion:          pkg.Version,
+		ChartName:             pkg.Repo,
+		Values:                values,
+		Username:              pkg.Auth.Username,
+		Password:              pkg.Auth.Password,
+		InsecureSkipTLSverify: pkg.InsecureSkipTLSverify,
+		PostRenderer:          postrenderLabels,
+	}
+
+	// Check if the release already exists before attempting to install, this can happen if the create event is triggered after a failed install
+	rel, err := hc.GetRelease(ctx, compositionMeta.GetReleaseName(mg), &helmconfig.GetConfig{})
+	if err != nil {
+		return fmt.Errorf("finding helm release: %w", err)
+	}
+	if rel != nil {
+		log.Debug("Release already exists, upgrading instead of installing.")
+		rel, err = hc.Upgrade(ctx, compositionMeta.GetReleaseName(mg), pkg.URL, &helmconfig.UpgradeConfig{
+			ActionConfig: actionConfig,
+			MaxHistory:   helmMaxHistory,
+		})
+	} else {
+		rel, err = hc.Install(ctx, compositionMeta.GetReleaseName(mg), pkg.URL, &helmconfig.InstallConfig{
+			ActionConfig: actionConfig,
+		})
+		if err != nil {
+			return fmt.Errorf("installing helm chart: %w", err)
+		}
+	}
+
 	log.Debug("Installing composition package", "package", pkg.URL)
 
 	all, digest, err := processor.DecodeMinRelease(rel)
@@ -505,35 +540,6 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
 	}
-
-	// values, ok, err := maps.NestedMap(mg.Object, "spec")
-	// if err != nil {
-	// 	return fmt.Errorf("getting spec values: %w", err)
-	// }
-	// if !ok {
-	// 	values = map[string]interface{}{}
-	// }
-	// upgradedRel, err := hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
-	// 	ActionConfig: &helmconfig.ActionConfig{
-	// 		ChartVersion: pkg.Version,
-	// 		ChartName:    pkg.Repo,
-	// 		Username:     pkg.Auth.Username,
-	// 		Password:     pkg.Auth.Password,
-	// 		Values:       values,
-	// 	},
-	// 	MaxHistory: helmMaxHistory,
-	// })
-	// if err != nil {
-	// 	retErr := fmt.Errorf("upgrading helm chart: %w", err)
-	// 	condition := condition.Unavailable()
-	// 	condition.Message = retErr.Error()
-	// 	unstructuredtools.SetConditions(mg, condition)
-	// 	_, err = tools.UpdateStatus(ctx, mg, updateOpts)
-	// 	if err != nil {
-	// 		return fmt.Errorf("updating status after failure: %w", err)
-	// 	}
-	// 	return retErr
-	// }
 
 	upgradedRel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 	if err != nil {
