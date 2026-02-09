@@ -505,7 +505,6 @@ func TestController(t *testing.T) {
 		}
 		t.Logf("Final Helm Revision Count: %d", finalRevisionCount)
 
-		// 5. ASSERTION - This is where the code "Breaks"
 		if finalRevisionCount > initialRevisionCount {
 			t.Errorf("CRITICAL FAILURE: The Observe method is not idempotent! "+
 				"Helm revisions increased from %d to %d without any Spec changes. "+

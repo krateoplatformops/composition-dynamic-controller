@@ -142,3 +142,5 @@ require (
 )
 
 replace github.com/krateoplatformops/plumbing => /Users/matteogastaldello/Documents/plumbing
+
+replace github.com/krateoplatformops/unstructured-runtime => /Users/matteogastaldello/Documents/unstructured-runtime

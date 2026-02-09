@@ -320,10 +320,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, err
 	}
 
-	_, err = tools.UpdateStatus(ctx, mg, updateOpts)
-	if err != nil {
-		return controller.ExternalObservation{}, err
-	}
+	// _, err = tools.UpdateStatus(ctx, mg, updateOpts)
+	// if err != nil {
+	// 	return controller.ExternalObservation{}, err
+	// }
 
 	log.Debug("Composition Observed - installed", "package", pkg.URL)
 
@@ -405,10 +405,18 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("creating helm client: %w", err)
 	}
 
+	values, ok, err := maps.NestedMap(mg.Object, "spec")
+	if err != nil {
+		return fmt.Errorf("getting spec values: %w", err)
+	}
+	if !ok {
+		values = map[string]interface{}{}
+	}
 	rel, err := hc.Install(ctx, compositionMeta.GetReleaseName(mg), pkg.URL, &helmconfig.InstallConfig{
 		ActionConfig: &helmconfig.ActionConfig{
 			ChartVersion: pkg.Version,
 			ChartName:    pkg.Repo,
+			Values:       values,
 		},
 	})
 
@@ -481,7 +489,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	log.Debug("Handling composition values update.")
+	log.Debug("Handling composition update")
 
 	if h.packageInfoGetter == nil {
 		return fmt.Errorf("helm chart package info getter must be specified")
@@ -498,9 +506,42 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("creating helm client: %w", err)
 	}
 
-	rel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
+	// values, ok, err := maps.NestedMap(mg.Object, "spec")
+	// if err != nil {
+	// 	return fmt.Errorf("getting spec values: %w", err)
+	// }
+	// if !ok {
+	// 	values = map[string]interface{}{}
+	// }
+	// upgradedRel, err := hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
+	// 	ActionConfig: &helmconfig.ActionConfig{
+	// 		ChartVersion: pkg.Version,
+	// 		ChartName:    pkg.Repo,
+	// 		Username:     pkg.Auth.Username,
+	// 		Password:     pkg.Auth.Password,
+	// 		Values:       values,
+	// 	},
+	// 	MaxHistory: helmMaxHistory,
+	// })
+	// if err != nil {
+	// 	retErr := fmt.Errorf("upgrading helm chart: %w", err)
+	// 	condition := condition.Unavailable()
+	// 	condition.Message = retErr.Error()
+	// 	unstructuredtools.SetConditions(mg, condition)
+	// 	_, err = tools.UpdateStatus(ctx, mg, updateOpts)
+	// 	if err != nil {
+	// 		return fmt.Errorf("updating status after failure: %w", err)
+	// 	}
+	// 	return retErr
+	// }
+
+	upgradedRel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 	if err != nil {
-		return fmt.Errorf("finding helm release: %w", err)
+		return fmt.Errorf("getting helm release: %w", err)
+	}
+	if upgradedRel == nil {
+		log.Debug("Composition not found after upgrade.")
+		return fmt.Errorf("composition not found after upgrade")
 	}
 
 	previousDigest, err := maps.NestedString(mg.Object, "status", "digest")
@@ -508,7 +549,7 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("getting previous digest from status: %w", err)
 	}
 
-	all, digest, err := processor.DecodeMinRelease(rel)
+	all, digest, err := processor.DecodeMinRelease(upgradedRel)
 	if err != nil {
 		return fmt.Errorf("decoding release: %w", err)
 	}
@@ -652,7 +693,8 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 			CompositionDefintionGVR:        pkg.CompositionDefinitionInfo.GVR,
 		})
 	if err != nil {
-		return fmt.Errorf("generating RBAC using chart-inspector: %w", err)
+		return fmt.Errorf("generating RBAC for composition %s/%s: %w",
+			mg.GetNamespace(), mg.GetName(), err)
 	}
 	rbInstaller := rbac.NewRBACInstaller(dyn)
 	err = rbInstaller.UninstallRBAC(generated)
