@@ -170,6 +170,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("creating helm client: %w", err)
 	}
+	hc, err = hc.WithCache()
+	if err != nil {
+		return controller.ExternalObservation{}, fmt.Errorf("enabling helm client cache: %w", err)
+	}
 
 	rel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 	if err != nil {
@@ -245,6 +249,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	hc, err = helm.NewClient(cfg, mg.GetNamespace(), slog.Default().Handler())
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("getting helm client: %w", err)
+	}
+	hc, err = hc.WithCache()
+	if err != nil {
+		return controller.ExternalObservation{}, fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	values, err := helmutils.ValuesFromSpec(mg)
@@ -414,6 +422,10 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
 	}
+	hc, err = hc.WithCache()
+	if err != nil {
+		return fmt.Errorf("enabling helm client cache: %w", err)
+	}
 
 	values, err := helmutils.ValuesFromSpec(mg)
 	if err != nil {
@@ -540,6 +552,10 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
 	}
+	hc, err = hc.WithCache()
+	if err != nil {
+		return fmt.Errorf("enabling helm client cache: %w", err)
+	}
 
 	upgradedRel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 	if err != nil {
@@ -647,6 +663,10 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	hc, err := helm.NewClient(h.kubeconfig, mg.GetNamespace(), slog.Default().Handler())
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
+	}
+	hc, err = hc.WithCache()
+	if err != nil {
+		return fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	pkg, err := h.packageInfoGetter.WithLogger(log).Get(mg)
