@@ -25,6 +25,9 @@ func DecodeRelease[T any, PT interface {
 	*T
 	MinimalMetaObject
 }](rel *helm.Release) ([]T, string, error) {
+	if rel == nil {
+		return nil, "", nil
+	}
 	// 1. Fast path: Empty manifest
 	if len(rel.Manifest) == 0 {
 		return nil, "", nil

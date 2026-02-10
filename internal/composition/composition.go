@@ -132,6 +132,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 
 	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg))
+	releaseName = compositionMeta.GetReleaseName(mg)
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
 		log.Debug("Composition is gracefully paused, skipping observe.")
 		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Observe", "Reconciliation is paused via the gracefully paused annotation."))
@@ -378,6 +379,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg))
+	releaseName := compositionMeta.GetReleaseName(mg)
 	mg, err = tools.Update(ctx, mg, updateOpts)
 	if err != nil {
 		return fmt.Errorf("updating cr with values: %w", err)
@@ -400,7 +402,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
-		WithBaseName(compositionMeta.GetReleaseName(mg)).
+		WithBaseName(releaseName).
 		Generate(rbacgen.Parameters{
 			CompositionName:                mg.GetName(),
 			CompositionNamespace:           mg.GetNamespace(),
@@ -451,18 +453,18 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	// Check if the release already exists before attempting to install, this can happen if the create event is triggered after a failed install
-	rel, err := hc.GetRelease(ctx, compositionMeta.GetReleaseName(mg), &helmconfig.GetConfig{})
+	rel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 	if err != nil {
 		return fmt.Errorf("finding helm release: %w", err)
 	}
 	if rel != nil {
 		log.Debug("Release already exists, upgrading instead of installing.")
-		rel, err = hc.Upgrade(ctx, compositionMeta.GetReleaseName(mg), pkg.URL, &helmconfig.UpgradeConfig{
+		rel, err = hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
 			ActionConfig: actionConfig,
 			MaxHistory:   helmMaxHistory,
 		})
 	} else {
-		rel, err = hc.Install(ctx, compositionMeta.GetReleaseName(mg), pkg.URL, &helmconfig.InstallConfig{
+		rel, err = hc.Install(ctx, releaseName, pkg.URL, &helmconfig.InstallConfig{
 			ActionConfig: actionConfig,
 		})
 		if err != nil {
