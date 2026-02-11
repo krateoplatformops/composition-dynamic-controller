@@ -42,10 +42,8 @@ import (
 )
 
 var (
-	// helmRegistryConfigPath = env.String(helmRegistryConfigPathEnvVar, helmclient.DefaultRegistryConfigPath)
 	krateoNamespace = env.String(krateoNamespaceEnvVar, krateoNamespaceDefault)
-	// helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
-	helmMaxHistory = env.Int(helmMaxHistoryEnvvar, 3)
+	helmMaxHistory  = env.Int(helmMaxHistoryEnvvar, 3)
 )
 
 const (
@@ -60,9 +58,8 @@ const (
 	reasonInstalled = "CompositionInstalled"
 
 	// Environment variables
-	helmRegistryConfigPathEnvVar = "HELM_REGISTRY_CONFIG_PATH"
-	helmMaxHistoryEnvvar         = "HELM_MAX_HISTORY"
-	krateoNamespaceEnvVar        = "KRATEO_NAMESPACE"
+	helmMaxHistoryEnvvar  = "HELM_MAX_HISTORY"
+	krateoNamespaceEnvVar = "KRATEO_NAMESPACE"
 
 	// Default namespace for Krateo Installation
 	krateoNamespaceDefault = "krateo-system"
