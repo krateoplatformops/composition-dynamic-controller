@@ -75,12 +75,6 @@ func NewHandler(cfg *rest.Config,
 	chartInspectorUrl string,
 	saName string,
 	saNamespace string) controller.ExternalClient {
-	// val, ok := os.LookupEnv(helmRegistryConfigPathEnvVar)
-	// if ok {
-	// 	helmRegistryConfigPath = val
-	// }
-
-	// helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 
 	return &handler{
 		kubeconfig:        cfg,
