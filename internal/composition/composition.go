@@ -678,7 +678,9 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	err = hc.Uninstall(ctx, releaseName, &helmconfig.UninstallConfig{})
+	err = hc.Uninstall(ctx, releaseName, &helmconfig.UninstallConfig{
+		IgnoreNotFound: true,
+	})
 	if err != nil {
 		return fmt.Errorf("uninstalling helm chart: %w", err)
 	}
