@@ -6,8 +6,8 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/go-logr/logr v1.4.3
 	github.com/gobuffalo/flect v1.0.3
-	github.com/krateoplatformops/plumbing v0.7.2
-	github.com/krateoplatformops/unstructured-runtime v0.3.1
+	github.com/krateoplatformops/plumbing v1.0.0
+	github.com/krateoplatformops/unstructured-runtime v0.3.2
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.35.0
 	k8s.io/apiextensions-apiserver v0.35.0
@@ -140,7 +140,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-replace github.com/krateoplatformops/plumbing => /Users/matteogastaldello/Documents/plumbing
-
-replace github.com/krateoplatformops/unstructured-runtime => /Users/matteogastaldello/Documents/unstructured-runtime

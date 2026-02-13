@@ -158,13 +158,13 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, fmt.Errorf("updating cr with values: %w", err)
 	}
 
-	hc, err := helm.NewClient(h.kubeconfig, mg.GetNamespace(), slog.Default().Handler())
+	hc, err := helm.NewClient(h.kubeconfig,
+		helm.WithNamespace(mg.GetNamespace()),
+		helm.WithLogger(h.getHelmLogger(meta.IsVerbose(mg))),
+		helm.WithCache(),
+	)
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("creating helm client: %w", err)
-	}
-	hc, err = hc.WithCache()
-	if err != nil {
-		return controller.ExternalObservation{}, fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	rel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
@@ -238,13 +238,12 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	cfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
 		return tracer.WithRoundTripper(rt)
 	}
-	hc, err = helm.NewClient(cfg, mg.GetNamespace(), slog.Default().Handler())
+	hc, err = helm.NewClient(cfg,
+		helm.WithNamespace(mg.GetNamespace()),
+		helm.WithCache(),
+	)
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("getting helm client: %w", err)
-	}
-	hc, err = hc.WithCache()
-	if err != nil {
-		return controller.ExternalObservation{}, fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	values, err := helmutils.ValuesFromSpec(mg)
@@ -411,13 +410,12 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("installing rbac: %w", err)
 	}
 
-	hc, err := helm.NewClient(h.kubeconfig, mg.GetNamespace(), slog.Default().Handler())
+	hc, err := helm.NewClient(h.kubeconfig,
+		helm.WithNamespace(mg.GetNamespace()),
+		helm.WithLogger(h.getHelmLogger(meta.IsVerbose(mg))),
+	)
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
-	}
-	hc, err = hc.WithCache()
-	if err != nil {
-		return fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	values, err := helmutils.ValuesFromSpec(mg)
@@ -541,13 +539,12 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	// Update the helm chart
-	hc, err := helm.NewClient(h.kubeconfig, mg.GetNamespace(), slog.Default().Handler())
+	hc, err := helm.NewClient(h.kubeconfig,
+		helm.WithNamespace(mg.GetNamespace()),
+		helm.WithLogger(h.getHelmLogger(meta.IsVerbose(mg))),
+	)
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
-	}
-	hc, err = hc.WithCache()
-	if err != nil {
-		return fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	upgradedRel, err := hc.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
@@ -653,13 +650,12 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("helm chart package info getter must be specified")
 	}
 
-	hc, err := helm.NewClient(h.kubeconfig, mg.GetNamespace(), slog.Default().Handler())
+	hc, err := helm.NewClient(h.kubeconfig,
+		helm.WithNamespace(mg.GetNamespace()),
+		helm.WithLogger(h.getHelmLogger(meta.IsVerbose(mg))),
+	)
 	if err != nil {
 		return fmt.Errorf("creating helm client: %w", err)
-	}
-	hc, err = hc.WithCache()
-	if err != nil {
-		return fmt.Errorf("enabling helm client cache: %w", err)
 	}
 
 	pkg, err := h.packageInfoGetter.WithLogger(log).Get(mg)
@@ -733,4 +729,13 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	return nil
+}
+
+func (h *handler) getHelmLogger(verbose bool) func(format string, v ...interface{}) {
+	if verbose {
+		return func(format string, v ...interface{}) {
+			slog.Debug(fmt.Sprintf(format, v...))
+		}
+	}
+	return func(format string, v ...interface{}) {}
 }
