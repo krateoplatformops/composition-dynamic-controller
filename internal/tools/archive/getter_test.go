@@ -15,7 +15,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gobuffalo/flect"
 
-	// "github.com/krateoplatformops/composition-dynamic-controller/internal/tools/archive"
 	"github.com/krateoplatformops/plumbing/e2e"
 	xenv "github.com/krateoplatformops/plumbing/env"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"
@@ -52,7 +51,7 @@ var (
 )
 
 const (
-	testdataPath = "../../../../testdata"
+	testdataPath = "../../../testdata"
 )
 
 type FakePluralizer struct{}
