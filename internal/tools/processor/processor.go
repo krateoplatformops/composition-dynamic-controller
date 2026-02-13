@@ -29,7 +29,7 @@ func DecodeRelease[T any, PT interface {
 		return nil, "", nil
 	}
 	// 1. Fast path: Empty manifest
-	if len(rel.Manifest) == 0 {
+	if strings.TrimSpace(rel.Manifest) == "" {
 		return nil, "", nil
 	}
 

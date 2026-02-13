@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -173,6 +174,9 @@ func TestDigestConsistency_Empty(t *testing.T) {
 
 	digestFast, err := ComputeReleaseDigest(rel)
 	assert.NoError(t, err)
+
+	fmt.Println("Digest for empty manifest (full):", digestFull)
+	fmt.Println("Digest for empty manifest (fast):", digestFast)
 
 	assert.Equal(t, "", digestFull)
 	assert.Equal(t, "", digestFast)
