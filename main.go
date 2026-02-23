@@ -75,6 +75,8 @@ func main() {
 		env.Int("COMPOSITION_CONTROLLER_MAX_ERROR_RETRIES", 5), "How many times to retry the processing of a resource when an error occurs before giving up and dropping the resource.")
 	metricsServerPort := flag.Int("metrics-server-port",
 		env.Int("COMPOSITION_CONTROLLER_METRICS_SERVER_PORT", 0), "The address to bind the metrics server to. If empty, metrics server is disabled.")
+	safeReleaseName := flag.Bool("safe-release-name",
+		env.Bool("COMPOSITION_CONTROLLER_SAFE_RELEASE_NAME", true), "If disabled the randmom suffix is not appended in the Helm release name. This can be useful for avoid having problems with complex helm charts. The use of this option is highly discouraged, as it can lead to release name collisions.")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -155,6 +157,7 @@ func main() {
 		WithValues("maxErrorRetryInterval", *maxErrorRetryInterval).
 		WithValues("maxErrorRetry", *maxErrorRetry).
 		WithValues("metricsServerPort", *metricsServerPort).
+		WithValues("safeReleaseName", *safeReleaseName).
 		Info("Starting composition dynamic controller.")
 
 	// Create a label requirement for the composition version
@@ -165,7 +168,22 @@ func main() {
 	}
 	labelselector := labels.NewSelector().Add(*labelreq)
 
-	handler := composition.NewHandler(cfg, pig, *event.NewAPIRecorder(rec), *pluralizer, *urlChartInspector, *saName, *saNamespace)
+	apiRecorder := event.NewAPIRecorder(rec)
+	if apiRecorder == nil {
+		log.Error(fmt.Errorf("creating API recorder"), "API recorder is nil, events will not be recorded.")
+		os.Exit(1)
+	}
+
+	handler := composition.NewHandler(&composition.HandlerOptions{
+		Kubeconfig:        cfg,
+		Pluralizer:        pluralizer,
+		PackageInfoGetter: pig,
+		EventRecorder:     *apiRecorder,
+		ChartInspectorUrl: *urlChartInspector,
+		SaName:            *saName,
+		SaNamespace:       *saNamespace,
+		SafeReleaseName:   *safeReleaseName,
+	})
 
 	opts := []builder.FuncOption{
 		builder.WithLogger(log),

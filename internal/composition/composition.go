@@ -65,7 +65,18 @@ const (
 
 var _ controller.ExternalClient = (*handler)(nil)
 
-func NewHandler(cfg *rest.Config, pig archive.Getter, event event.APIRecorder, pluralizer pluralizer.PluralizerInterface, chartInspectorUrl string, saName string, saNamespace string) controller.ExternalClient {
+type HandlerOptions struct {
+	Kubeconfig        *rest.Config
+	PackageInfoGetter archive.Getter
+	EventRecorder     event.APIRecorder
+	Pluralizer        pluralizer.PluralizerInterface
+	ChartInspectorUrl string
+	SaName            string
+	SaNamespace       string
+	SafeReleaseName   bool
+}
+
+func NewHandler(opts *HandlerOptions) controller.ExternalClient {
 	val, ok := os.LookupEnv(helmRegistryConfigPathEnvVar)
 	if ok {
 		helmRegistryConfigPath = val
@@ -74,13 +85,14 @@ func NewHandler(cfg *rest.Config, pig archive.Getter, event event.APIRecorder, p
 	helmRegistryConfigFile = filepath.Join(helmRegistryConfigPath, registry.CredentialsFileBasename)
 
 	return &handler{
-		kubeconfig:        cfg,
-		pluralizer:        pluralizer,
-		packageInfoGetter: pig,
-		eventRecorder:     event,
-		chartInspectorUrl: chartInspectorUrl,
-		saName:            saName,
-		saNamespace:       saNamespace,
+		kubeconfig:        opts.Kubeconfig,
+		pluralizer:        opts.Pluralizer,
+		packageInfoGetter: opts.PackageInfoGetter,
+		eventRecorder:     opts.EventRecorder,
+		chartInspectorUrl: opts.ChartInspectorUrl,
+		saName:            opts.SaName,
+		saNamespace:       opts.SaNamespace,
+		safeReleaseName:   opts.SafeReleaseName,
 	}
 }
 
@@ -93,6 +105,8 @@ type handler struct {
 	chartInspectorUrl string
 	saName            string
 	saNamespace       string
+	// Feature flag to disable random suffix in Helm release names. This is highly discouraged as it can lead to release name collisions, but it can be useful for certain complex charts that have issues with long release names.
+	safeReleaseName bool
 }
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
@@ -116,7 +130,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		DynamicClient: dyn,
 	}
 
-	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg))
+	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg, h.safeReleaseName))
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
 		log.Debug("Composition is gracefully paused, skipping observe.")
 		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Observe", "Reconciliation is paused via the gracefully paused annotation."))
@@ -354,7 +368,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg))
+	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg, h.safeReleaseName))
 	mg, err = tools.Update(ctx, mg, updateOpts)
 	if err != nil {
 		return fmt.Errorf("updating cr with values: %w", err)
