@@ -136,7 +136,7 @@ The controller reverts to the logic used prior to v0.20.0. The release name is d
 2. The **Composition resource name**.
 
 > [!CAUTION]
-> **Disabling this option is highly discouraged.** While it provides backward compatibility for charts with strict character length limits, it removes the uniqueness guarantee. Creating Compositions with the same name in different namespaces will cause release name collisions and failed Helm operations.
+> **Disabling this option is highly discouraged.** While it provides backward compatibility for charts with strict character length limits, it removes the uniqueness guarantee. Creating Compositions with the same name in different namespaces will cause release name collisions and failed Helm operations. It's up to the administrator to enforce a policy between users of composition name uniqueness to mitigate the risk.
 
 ---
 
