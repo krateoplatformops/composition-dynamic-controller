@@ -249,3 +249,4 @@ These enviroment varibles can be changed in the Deployment of the composition-dy
 | COMPOSITION_CONTROLLER_MIN_ERROR_RETRY_INTERVAL | The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval. | 1s |
 | COMPOSITION_CONTROLLER_MAX_ERROR_RETRIES | The maximum number of retries when an error occurs. Set to 0 to disable retries. | 5 |
 | COMPOSITION_CONTROLLER_METRICS_SERVER_PORT | The port where the metrics server will be listening. If not set, the metrics server is disabled. |  |
+| COMPOSITION_CONTROLLER_SAFE_RELEASE_NAME | If disabled the randmom suffix is not appended in the Helm release name. This can be useful for avoid having problems with complex helm charts. The use of this option is highly discouraged, as it can lead to release name collisions. | true |
