@@ -50,12 +50,9 @@ const (
 	reasonReconciliationGracefullyPaused event.Reason = "ReconciliationGracefullyPaused"
 
 	// Event reasons
-	reasonCreated   = "CompositionCreated"
-	reasonDeleted   = "CompositionDeleted"
-	reasonReady     = "CompositionReady"
-	reasonNotReady  = "CompositionNotReady"
-	reasonUpdated   = "CompositionUpdated"
-	reasonInstalled = "CompositionInstalled"
+	reasonCreated = "CompositionCreated"
+	reasonDeleted = "CompositionDeleted"
+	reasonUpdated = "CompositionUpdated"
 
 	// Environment variables
 	helmMaxHistoryEnvvar  = "HELM_MAX_HISTORY"
