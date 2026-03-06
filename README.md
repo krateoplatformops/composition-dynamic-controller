@@ -95,25 +95,57 @@ The **Composition Dynamic Controller (CDC)** is a specialized Kubernetes operato
 
 ## Helm Release Name Logic
 
-### Prior Versions (<= 0.19.9)
-
-For versions up to 0.19.9, the **`composition-dynamic-controller`** used the following logic to determine the **Helm release name** associated with a composition resource:
-
-1.  If the **label** `krateo.io/release-name` is set on the composition resource, its value is used as the Helm release name.
-2.  Otherwise, the **composition resource name** is used as the Helm release name.
+The logic used by the **`composition-dynamic-controller`** to determine the Helm release name has evolved to better handle multi-tenancy and character limits.
 
 ---
 
-### Subsequent Versions (>= 0.20.0)
+### Prior Versions (<= 0.19.9)
 
-Starting from version 0.20.0, the **`composition-dynamic-controller`** uses the following logic to determine the Helm release name associated with a composition resource:
+In these versions, the release name was determined by:
 
-1.  If the **annotation** `krateo.io/release-name` is set on the composition resource, its value is used as the Helm release name.
-2.  Otherwise, the release name is composed as follows: **`{composition.metadata.name}-{composition.metadata.uid[:8]}`**.
+1. The value of the **label** `krateo.io/release-name` (if set).
+2. The **Composition resource name** (as a fallback).
 
-**N.B.:** From this version onward, the `metadata.name` field of the composition cannot exceed **44 characters**. This is because the UID suffix adds **9 characters** to the release name (the hyphen `-` plus the 8 characters of the UID), and Helm release names cannot exceed **53 characters** in total.
+---
 
-This change was implemented to avoid conflicts when multiple resources belonging to the `composition.krateo.io` group with the same `metadata.name` are created in **different namespaces**.
+### Versions 0.20.0 to 0.20.2
+
+Starting with v0.20.0, the logic shifted to ensure uniqueness across different namespaces:
+
+1. If the **annotation** `krateo.io/release-name` is set, its value is used.
+2. Otherwise, the name is generated as: `{composition.metadata.name}-{composition.metadata.uid[:8]}`.
+
+> [!IMPORTANT]
+> Because the UID suffix adds 9 characters (hyphen + 8-char UID) and Helm limits release names to **53 characters**, the `metadata.name` of a Composition cannot exceed **44 characters**.
+
+---
+
+### Versions 0.20.3+ (Configurable Logic)
+
+Starting from **v0.20.3**, the environment variable `COMPOSITION_CONTROLLER_SAFE_RELEASE_NAME` allows you to toggle between modern and legacy naming conventions.
+
+#### Default Behavior (`true`)
+
+The controller appends the **UID suffix** to ensure uniqueness across namespaces. This is the recommended setting to prevent Helm naming collisions when identical Composition names exist in different namespaces.
+
+#### Legacy Behavior (`false`)
+
+The controller reverts to the logic used prior to v0.20.0. The release name is determined by:
+
+1. The value of the `krateo.io/release-name` **annotation** (if set).
+2. The **Composition resource name**.
+
+> [!CAUTION]
+> **Disabling this option is highly discouraged.** While it provides backward compatibility for charts with strict character length limits, it removes the uniqueness guarantee. Creating Compositions with the same name in different namespaces will cause release name collisions and failed Helm operations. It's up to the administrator to enforce a policy between users of composition name uniqueness to mitigate the risk.
+
+---
+
+### Comparison Summary (v0.20.3+)
+
+| `SAFE_RELEASE_NAME` | Source | UID Suffix | Collision Risk | Max Name Length |
+| --- | --- | --- | --- | --- |
+| **`true` (Default)** | Name + UID | Included | Negligible | 44 Characters |
+| **`false`** | Annotation/Name | Excluded | **High** | 53 Characters |
 
 ---
 
@@ -249,3 +281,4 @@ These enviroment varibles can be changed in the Deployment of the composition-dy
 | COMPOSITION_CONTROLLER_MIN_ERROR_RETRY_INTERVAL | The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval. | 1s |
 | COMPOSITION_CONTROLLER_MAX_ERROR_RETRIES | The maximum number of retries when an error occurs. Set to 0 to disable retries. | 5 |
 | COMPOSITION_CONTROLLER_METRICS_SERVER_PORT | The port where the metrics server will be listening. If not set, the metrics server is disabled. |  |
+| COMPOSITION_CONTROLLER_SAFE_RELEASE_NAME | If disabled the randmom suffix is not appended in the Helm release name. This can be useful for avoid having problems with complex helm charts. The use of this option is highly discouraged, as it can lead to release name collisions. | true |

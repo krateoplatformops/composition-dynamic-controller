@@ -195,10 +195,18 @@ func TestController(t *testing.T) {
 				t.Error("Creating REST mapper.", "error", err)
 				return ctx
 			}
-			handler = NewHandler(cfg.Client().RESTConfig(), pig, *event.NewAPIRecorder(rec), pluralizer, mapper, chartInspectorMockURL, "test-sa", altNamespace)
 
-			// handler = NewHandler(cfg.Client().RESTConfig(), log, pig, *event.NewAPIRecorder(rec), pluralizer, chartInspectorUrl, "test-sa", altNamespace)
-
+			handler = NewHandler(&HandlerOptions{
+				Kubeconfig:        cfg.Client().RESTConfig(),
+				PackageInfoGetter: pig,
+				EventRecorder:     *event.NewAPIRecorder(rec),
+				Pluralizer:        pluralizer,
+				ChartInspectorUrl: chartInspectorMockURL,
+				SaName:            "test-sa",
+				SaNamespace:       altNamespace,
+				SafeReleaseName:   true,
+				Mapper:            mapper,
+			})
 			resli, err := decoder.DecodeAllFiles(ctx, os.DirFS(filepath.Join(testdataPath, "compositiondefinitions")), "*.yaml")
 			if err != nil {
 				t.Log("Error decoding CRDs: ", err)

@@ -33,15 +33,20 @@ const (
 	AnnotationKeyReconciliationGracefullyPausedTime = "krateo.io/gracefully-paused-time"
 )
 
-func CalculateReleaseName(o runtime.Object) string {
+// CalculateReleaseName generates a release name for the Helm chart based on the name and UID of the resource.
+// If safeReleaseName is false, it will not append a random suffix to the release name, which can lead to collisions but is necessary for certain complex charts that have issues with long release names.
+func CalculateReleaseName(o runtime.Object, safeReleaseName bool) string {
 	obj := o.(metav1.Object)
-	uid := obj.GetUID()
-	if uid == "" {
-		// Generate random string if UID is not set
-		return fmt.Sprintf("%s-%s", obj.GetName(), rand.SafeEncodeString(rand.String(8)))
+	if safeReleaseName {
+		uid := obj.GetUID()
+		if uid == "" {
+			// Generate random string if UID is not set
+			return fmt.Sprintf("%s-%s", obj.GetName(), rand.SafeEncodeString(rand.String(8)))
+		}
+		hashstr := rand.SafeEncodeString(string(obj.GetUID())[:8])
+		return fmt.Sprintf("%s-%s", obj.GetName(), hashstr)
 	}
-	hashstr := rand.SafeEncodeString(string(obj.GetUID())[:8])
-	return fmt.Sprintf("%s-%s", obj.GetName(), hashstr)
+	return obj.GetName()
 }
 
 func GetReleaseName(o metav1.Object) string {
@@ -55,6 +60,7 @@ func SetReleaseName(o metav1.Object, name string) {
 	if mglabels == nil {
 		mglabels = make(map[string]string)
 	}
+
 	if _, ok := mglabels[ReleaseNameLabel]; !ok {
 		mglabels[ReleaseNameLabel] = name
 	}
