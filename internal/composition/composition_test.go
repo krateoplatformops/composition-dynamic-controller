@@ -26,8 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/gobuffalo/flect"
-	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/archive"
+	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/pkg/meta"
 	"github.com/krateoplatformops/plumbing/kubeutil/event"
 	"github.com/krateoplatformops/plumbing/kubeutil/eventrecorder"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller"

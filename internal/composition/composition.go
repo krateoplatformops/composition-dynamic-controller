@@ -12,7 +12,7 @@ import (
 	xcontext "github.com/krateoplatformops/unstructured-runtime/pkg/context"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/chartinspector"
-	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/pkg/meta"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/rbacgen"
