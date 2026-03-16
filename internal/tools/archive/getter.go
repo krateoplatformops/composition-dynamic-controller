@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/internal/meta"
+	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/pkg/meta"
 
 	"github.com/krateoplatformops/unstructured-runtime/pkg/logging"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/pluralizer"

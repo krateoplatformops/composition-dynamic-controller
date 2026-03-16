@@ -1,6 +1,6 @@
 # Build environment
 # -----------------
-FROM golang:1.25-trixie AS builder
+FROM golang:1.25.6-bookworm AS builder
 LABEL stage=builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -21,6 +21,7 @@ RUN go mod download
 
 # COPY apis/ apis/
 COPY internal/ internal/
+COPY pkg/ pkg/
 COPY main.go main.go
 
 # Build
