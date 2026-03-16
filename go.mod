@@ -6,7 +6,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/go-logr/logr v1.4.3
 	github.com/gobuffalo/flect v1.0.3
-	github.com/krateoplatformops/plumbing v1.5.1
+	github.com/krateoplatformops/plumbing v1.6.0
 	github.com/krateoplatformops/unstructured-runtime v1.0.0
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.35.2
