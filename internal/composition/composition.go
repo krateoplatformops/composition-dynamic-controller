@@ -176,7 +176,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, fmt.Errorf("finding helm release: %w", err)
 	}
 	if rel == nil {
-		log.Debug("Composition not found.")
+		log.Debug("Release not found.")
 		return controller.ExternalObservation{
 			ResourceExists:   false,
 			ResourceUpToDate: false,
@@ -557,8 +557,8 @@ func (h *handler) Update(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("getting helm release: %w", err)
 	}
 	if upgradedRel == nil {
-		log.Debug("Composition not found after upgrade.")
-		return fmt.Errorf("composition not found after upgrade")
+		log.Debug("Release not found after upgrade.")
+		return fmt.Errorf("release not found after upgrade")
 	}
 
 	previousDigest, err := maps.NestedString(mg.Object, "status", "digest")
@@ -674,8 +674,8 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("finding helm release: %w", err)
 	}
 	if rel == nil {
-		log.Debug("Composition not found, nothing to uninstall.", "package", pkg.URL)
-		h.eventRecorder.Event(mg, event.Normal(reasonDeleted, "Delete", fmt.Sprintf("Composition not found, nothing to uninstall: %s", mg.GetName())))
+		log.Debug("Release not found, nothing to uninstall.", "package", pkg.URL)
+		h.eventRecorder.Event(mg, event.Normal(reasonDeleted, "Delete", fmt.Sprintf("Release not found, nothing to uninstall: %s", mg.GetName())))
 		return nil
 	}
 
