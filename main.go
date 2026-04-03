@@ -129,7 +129,7 @@ func main() {
 	}...)
 	defer cancel()
 
-	rec, err := eventrecorder.CreateWithThrottle(ctx, cfg, "composition-dynamic-controller", nil)
+	rec, err := eventrecorder.Create(ctx, cfg, "composition-dynamic-controller", nil)
 	if err != nil {
 		log.Error(err, "Creating event recorder.")
 		os.Exit(1)
