@@ -107,7 +107,6 @@ type handler struct {
 
 func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (controller.ExternalObservation, error) {
 	mg = mg.DeepCopy()
-	releaseName := compositionMeta.GetReleaseName(mg)
 
 	log := xcontext.Logger(ctx)
 
@@ -128,6 +127,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 
 	compositionMeta.SetReleaseName(mg, compositionMeta.CalculateReleaseName(mg, h.safeReleaseName))
+	releaseName := compositionMeta.GetReleaseName(mg)
 	if _, p := compositionMeta.GetGracefullyPausedTime(mg); p && compositionMeta.IsGracefullyPaused(mg) {
 		log.Debug("Composition is gracefully paused, skipping observe.")
 		h.eventRecorder.Event(mg, event.Normal(reasonReconciliationGracefullyPaused, "Observe", "Reconciliation is paused via the gracefully paused annotation."))
