@@ -2,11 +2,12 @@ name: release-tag
 
 on:
   push:
-    tags: [ '[0-9]+.[0-9]+.[0-9]+' ]
+    tags: [ '[0-9]+.[0-9]+.[0-9]+', '[0-9]+.[0-9]+.[0-9]+-*' ] # Matches standard versions and pre-release suffixes
 
 env:
   GHCR_REPO: ghcr.io/${{ github.repository }}
   DOCKER_PUSH: true
+  LOCAL_KIND: false
 
 jobs:
   build-and-push:
@@ -44,14 +45,16 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: ${{ env.DOCKER_PUSH == 'true' }}
-          platforms: linux/amd64,linux/arm64
+          load: ${{ env.LOCAL_KIND == 'true' }}
+          no-cache: ${{ env.LOCAL_KIND == 'true' }}
+          platforms: ${{ env.LOCAL_KIND == 'true' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             CACHEBUST=${{ github.sha }}
             COMMIT_HASH=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: ${{ env.LOCAL_KIND == 'true' && '' || 'type=gha' }}
+          cache-to: ${{ env.LOCAL_KIND == 'true' && '' || 'type=gha,mode=max' }}
 
   test:
     runs-on: ubuntu-latest
