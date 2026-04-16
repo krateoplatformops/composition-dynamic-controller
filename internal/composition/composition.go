@@ -222,7 +222,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		if err != nil {
 			return controller.ExternalObservation{}, fmt.Errorf("updating status after failure: %w", err)
 		}
-		return controller.ExternalObservation{}, fmt.Errorf("generating RBAC using chart-inspector: %w", err)
+		return controller.ExternalObservation{}, fmt.Errorf("generating RBAC using chart-inspector: %w", retErr)
 	}
 	rbInstaller := rbac.NewRBACInstaller(dyn)
 	err = rbInstaller.ApplyRBAC(generated)
