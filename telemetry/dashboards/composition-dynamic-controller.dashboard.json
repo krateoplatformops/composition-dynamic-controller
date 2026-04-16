@@ -33,7 +33,7 @@
         "name": "deployment",
         "type": "query",
         "label": "Deployment/Resource",
-        "query": "label_values(unstructured_runtime_reconcile_queue_depth, exported_instance)",
+        "query": "label_values(unstructured_runtime_reconcile_in_flight, exported_instance)",
         "datasource": "$datasource",
         "refresh": 1,
         "hide": 0,
