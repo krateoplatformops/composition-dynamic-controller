@@ -12,6 +12,7 @@ import (
 	xcontext "github.com/krateoplatformops/unstructured-runtime/pkg/context"
 
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/chartinspector"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/metrics"
 	compositionMeta "github.com/krateoplatformops/composition-dynamic-controller/pkg/meta"
 	unstructuredtools "github.com/krateoplatformops/unstructured-runtime/pkg/tools/unstructured"
 
@@ -201,7 +202,7 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	}
 
 	chartInspector := chartinspector.NewChartInspector(h.chartInspectorUrl)
-	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
+	rbgen := metrics.WrapRBACGen(rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector))
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
 		WithBaseName(releaseName).
@@ -225,7 +226,10 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 		return controller.ExternalObservation{}, fmt.Errorf("generating RBAC using chart-inspector: %w", retErr)
 	}
 	rbInstaller := rbac.NewRBACInstaller(dyn)
-	err = rbInstaller.ApplyRBAC(generated)
+	helmMetrics := metrics.NewHelmMetrics(ctx)
+	err = helmMetrics.TimedRBAC(func() error {
+		return rbInstaller.ApplyRBAC(generated)
+	})
 	if err != nil {
 		retErr := fmt.Errorf("applying rbac: %w", err)
 		condition := condition.Unavailable()
@@ -263,17 +267,20 @@ func (h *handler) Observe(ctx context.Context, mg *unstructured.Unstructured) (c
 	if err != nil {
 		return controller.ExternalObservation{}, fmt.Errorf("creating label post renderer: %w", err)
 	}
-	upgradedRel, err := hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
-		ActionConfig: &helmconfig.ActionConfig{
-			ChartVersion:          pkg.Version,
-			ChartName:             pkg.Repo,
-			Username:              pkg.Auth.Username,
-			Password:              pkg.Auth.Password,
-			InsecureSkipTLSverify: pkg.InsecureSkipTLSverify,
-			Values:                values,
-			PostRenderer:          postrenderLabels,
-		},
-		MaxHistory: helmMaxHistory,
+	helmMetrics = metrics.NewHelmMetrics(ctx)
+	upgradedRel, err := helmMetrics.TimedUpgradeWithResult(func() (*helmconfig.Release, error) {
+		return hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
+			ActionConfig: &helmconfig.ActionConfig{
+				ChartVersion:          pkg.Version,
+				ChartName:             pkg.Repo,
+				Username:              pkg.Auth.Username,
+				Password:              pkg.Auth.Password,
+				InsecureSkipTLSverify: pkg.InsecureSkipTLSverify,
+				Values:                values,
+				PostRenderer:          postrenderLabels,
+			},
+			MaxHistory: helmMaxHistory,
+		})
 	})
 	if err != nil {
 		retErr := fmt.Errorf("upgrading helm chart: %w", err)
@@ -394,7 +401,7 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	}
 
 	chartInspector := chartinspector.NewChartInspector(h.chartInspectorUrl)
-	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
+	rbgen := metrics.WrapRBACGen(rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector))
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
 		WithBaseName(releaseName).
@@ -410,7 +417,10 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("generating RBAC using chart-inspector: %w", err)
 	}
 	rbInstaller := rbac.NewRBACInstaller(dyn)
-	err = rbInstaller.ApplyRBAC(generated)
+	helmMetrics := metrics.NewHelmMetrics(ctx)
+	err = helmMetrics.TimedRBAC(func() error {
+		return rbInstaller.ApplyRBAC(generated)
+	})
 	if err != nil {
 		return fmt.Errorf("installing rbac: %w", err)
 	}
@@ -451,15 +461,20 @@ func (h *handler) Create(ctx context.Context, mg *unstructured.Unstructured) err
 	if err != nil {
 		return fmt.Errorf("finding helm release: %w", err)
 	}
+	helmMetrics = metrics.NewHelmMetrics(ctx)
 	if rel != nil {
 		log.Debug("Release already exists, upgrading instead of installing.")
-		rel, err = hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
-			ActionConfig: actionConfig,
-			MaxHistory:   helmMaxHistory,
+		rel, err = helmMetrics.TimedUpgradeWithResult(func() (*helmconfig.Release, error) {
+			return hc.Upgrade(ctx, releaseName, pkg.URL, &helmconfig.UpgradeConfig{
+				ActionConfig: actionConfig,
+				MaxHistory:   helmMaxHistory,
+			})
 		})
 	} else {
-		rel, err = hc.Install(ctx, releaseName, pkg.URL, &helmconfig.InstallConfig{
-			ActionConfig: actionConfig,
+		rel, err = helmMetrics.TimedInstallWithResult(func() (*helmconfig.Release, error) {
+			return hc.Install(ctx, releaseName, pkg.URL, &helmconfig.InstallConfig{
+				ActionConfig: actionConfig,
+			})
 		})
 		if err != nil {
 			return fmt.Errorf("installing helm chart: %w", err)
@@ -679,8 +694,11 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return nil
 	}
 
-	err = hc.Uninstall(ctx, releaseName, &helmconfig.UninstallConfig{
-		IgnoreNotFound: true,
+	helmMetrics := metrics.NewHelmMetrics(ctx)
+	err = helmMetrics.TimedUninstall(func() error {
+		return hc.Uninstall(ctx, releaseName, &helmconfig.UninstallConfig{
+			IgnoreNotFound: true,
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("uninstalling helm chart: %w", err)
@@ -701,7 +719,7 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 		return fmt.Errorf("converting GVK to GVR: %w", err)
 	}
 	chartInspector := chartinspector.NewChartInspector(h.chartInspectorUrl)
-	rbgen := rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector)
+	rbgen := metrics.WrapRBACGen(rbacgen.NewRBACGen(h.saName, h.saNamespace, &chartInspector))
 
 	// Get Resources and generate RBAC
 	generated, err := rbgen.
@@ -719,7 +737,9 @@ func (h *handler) Delete(ctx context.Context, mg *unstructured.Unstructured) err
 			mg.GetNamespace(), mg.GetName(), err)
 	}
 	rbInstaller := rbac.NewRBACInstaller(dyn)
-	err = rbInstaller.UninstallRBAC(generated)
+	err = helmMetrics.TimedRBAC(func() error {
+		return rbInstaller.UninstallRBAC(generated)
+	})
 	if err != nil {
 		return fmt.Errorf("uninstalling rbac: %w", err)
 	}

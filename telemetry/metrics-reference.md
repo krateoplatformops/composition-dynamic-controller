@@ -75,6 +75,33 @@ For average duration, use `_sum` divided by `_count` instead of `_bucket`.
 | `unstructured_runtime.status.update.duration_seconds` | Histogram | seconds | Time to update resource status. | `histogram_quantile(0.95, sum by (le) (rate(unstructured_runtime_status_update_duration_seconds_bucket[5m])))` |
 | `unstructured_runtime.status.update.failure` | Counter | count | Failed status update operations. | `sum(increase(unstructured_runtime_status_update_failure_total[1h]))` |
 
+## Composition Dynamic Controller Metrics
+
+| Metric | Type | Unit | Description | PromQL example |
+|---|---|---|---|---|
+| `composition.rbac_generation.duration_seconds` | Histogram | seconds | Time to generate RBAC policies. **Includes** chart-inspector call internally. | `histogram_quantile(0.95, sum by (le) (rate(composition_rbac_generation_duration_seconds_bucket[5m])))` |
+| `composition.rbac_apply.duration_seconds` | Histogram | seconds | Time to apply RBAC policies to the cluster. | `histogram_quantile(0.95, sum by (le) (rate(composition_rbac_apply_duration_seconds_bucket[5m])))` |
+| `composition.helm_install.duration_seconds` | Histogram | seconds | Time to install Helm chart. | `histogram_quantile(0.95, sum by (le) (rate(composition_helm_install_duration_seconds_bucket[5m])))` |
+| `composition.helm_upgrade.duration_seconds` | Histogram | seconds | Time to upgrade Helm chart. | `histogram_quantile(0.95, sum by (le) (rate(composition_helm_upgrade_duration_seconds_bucket[5m])))` |
+
+### Histogram Bucket Configuration
+
+All `composition.*` histograms use custom bucket boundaries optimized for observing operation latencies:
+
+```
+0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0,
+2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0,
+2500.0, 5000.0, 10000.0 (seconds)
+```
+
+These boundaries provide millisecond-level precision for sub-second operations and extended range up to 10,000 seconds (2.7 hours) for long-running operations.
+
+### Metric Design Notes
+
+- **chart-inspector integration**: The `composition.rbac_generation.duration_seconds` metric measures the complete generation flow, which internally calls the chart-inspector service to fetch resources. This aggregated measurement eliminates redundant metric registration.
+- **RBAC split**: The RBAC generation and apply operations are measured separately to distinguish policy generation time from cluster application time.
+- **Helm operations**: Install and upgrade metrics help track deployment performance and identify bottlenecks in the Helm integration.
+
 ## Setup Notes
 
 - Metrics are tagged with the following resource attributes:

@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/metrics"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/archive"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/dynamic"
 	"github.com/krateoplatformops/composition-dynamic-controller/pkg/meta"
@@ -187,6 +188,26 @@ func main() {
 		os.Exit(1)
 	}
 	defer telemetryShutdown(context.Background())
+
+	// Initialize CDC-specific metrics
+	if err := metrics.InitMetrics(context.Background(), log, telemetryEnabled, *otelServiceName, telemetryExportInterval, *deploymentName); err != nil {
+		slog.Warn("Cannot initialize CDC metrics, continuing without metrics", "error", err)
+	}
+	metrics.DebugStatus()
+
+	// Periodic metrics status logging for monitoring during stress tests
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				metrics.DebugStatus()
+			}
+		}
+	}()
 
 	// Create a label requirement for the composition version
 	labelreq, err := labels.NewRequirement(meta.CompositionVersionLabel, selection.Equals, []string{*resourceVersion})

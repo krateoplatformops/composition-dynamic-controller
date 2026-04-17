@@ -29,10 +29,17 @@ processors:
       - key: k8s_statefulset_name
         from_attribute: k8s.statefulset.name
         action: upsert
+  # Convert resource attributes to metric attributes for Prometheus export
+  resource_detection:
+    detectors: [env, gke, azure, aws, system]
 
 exporters:
   prometheus:
     endpoint: 0.0.0.0:9464
+    # Include resource attributes as Prometheus labels
+    # This ensures service.instance.id becomes exported_instance in Prometheus
+    resource_to_telemetry_conversion:
+      enabled: true
 
 service:
   pipelines:

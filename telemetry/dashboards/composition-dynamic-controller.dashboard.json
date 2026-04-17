@@ -645,6 +645,199 @@
           }
         }
       }
+    },
+    {
+      "id": 402,
+      "type": "stat",
+      "title": "RBAC Generation Latency (p95)",
+      "description": "Time to generate RBAC policies (includes chart-inspector call)",
+      "datasource": "$datasource",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(composition_rbac_generation_duration_seconds_bucket{exported_instance=~\"$deployment\"}[5m])))",
+          "legendFormat": "RBAC Gen Duration (p95)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "id": 403,
+      "type": "stat",
+      "title": "RBAC Apply Latency (p95)",
+      "description": "Time to apply RBAC policies to cluster",
+      "datasource": "$datasource",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 66
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(composition_rbac_apply_duration_seconds_bucket{exported_instance=~\"$deployment\"}[5m])))",
+          "legendFormat": "RBAC Apply Duration (p95)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "id": 404,
+      "type": "timeseries",
+      "title": "Helm Install Latency",
+      "description": "Helm chart installation duration",
+      "datasource": "$datasource",
+      "interval": "5m",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 66
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(composition_helm_install_duration_seconds_bucket{exported_instance=~\"$deployment\"}[5m])))",
+          "legendFormat": "Install Duration (p95)"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(composition_helm_install_duration_seconds_bucket{exported_instance=~\"$deployment\"}[5m])))",
+          "legendFormat": "Install Duration (p50)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "id": 405,
+      "type": "timeseries",
+      "title": "Helm Upgrade Latency",
+      "description": "Helm chart upgrade duration",
+      "datasource": "$datasource",
+      "interval": "5m",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 66
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(composition_helm_upgrade_duration_seconds_bucket{exported_instance=~\"$deployment\"}[5m])))",
+          "legendFormat": "Upgrade Duration (p95)"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(composition_helm_upgrade_duration_seconds_bucket{exported_instance=~\"$deployment\"}[5m])))",
+          "legendFormat": "Upgrade Duration (p50)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "id": 406,
+      "type": "stat",
+      "title": "Helm Operations Error Rate",
+      "description": "Rate of helm operation failures (install/upgrade/uninstall)",
+      "datasource": "$datasource",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(composition_helm_install_errors{exported_instance=~\"$deployment\"}[5m])",
+          "legendFormat": "Install Errors"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(composition_helm_upgrade_errors{exported_instance=~\"$deployment\"}[5m])",
+          "legendFormat": "Upgrade Errors"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(composition_helm_uninstall_errors{exported_instance=~\"$deployment\"}[5m])",
+          "legendFormat": "Uninstall Errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 407,
+      "type": "stat",
+      "title": "RBAC Operations Error Rate",
+      "description": "Rate of RBAC operation failures (generation/apply)",
+      "datasource": "$datasource",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(composition_rbac_generation_errors{exported_instance=~\"$deployment\"}[5m])",
+          "legendFormat": "Generation Errors"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(composition_rbac_apply_errors{exported_instance=~\"$deployment\"}[5m])",
+          "legendFormat": "Apply Errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     }
   ]
 }
