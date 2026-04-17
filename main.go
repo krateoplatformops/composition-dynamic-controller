@@ -17,9 +17,11 @@ import (
 	"github.com/krateoplatformops/unstructured-runtime/pkg/controller/builder"
 	ctrlevent "github.com/krateoplatformops/unstructured-runtime/pkg/controller/event"
 	"github.com/krateoplatformops/unstructured-runtime/pkg/metrics/server"
+	"github.com/krateoplatformops/unstructured-runtime/pkg/telemetry"
 
 	"github.com/go-logr/logr"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/composition"
+	"github.com/krateoplatformops/composition-dynamic-controller/internal/metrics"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/archive"
 	"github.com/krateoplatformops/composition-dynamic-controller/internal/tools/dynamic"
 	"github.com/krateoplatformops/composition-dynamic-controller/pkg/meta"
@@ -40,7 +42,8 @@ import (
 )
 
 const (
-	serviceName = "composition-dynamic-controller"
+	serviceName               = "composition-dynamic-controller"
+	defaultOtelExportInterval = 30 * time.Second
 )
 
 func main() {
@@ -78,6 +81,10 @@ func main() {
 		env.Int("COMPOSITION_CONTROLLER_METRICS_SERVER_PORT", 0), "The address to bind the metrics server to. If empty, metrics server is disabled.")
 	safeReleaseName := flag.Bool("safe-release-name",
 		env.Bool("COMPOSITION_CONTROLLER_SAFE_RELEASE_NAME", true), "If disabled the randmom suffix is not appended in the Helm release name. This can be useful for avoid having problems with complex helm charts. The use of this option is highly discouraged, as it can lead to release name collisions.")
+	otelEnabled := flag.Bool("otel-enabled", env.Bool("OTEL_ENABLED", false), "Enable OTLP metrics export for provider-runtime telemetry.")
+	otelServiceName := flag.String("otel-service-name", serviceName, "The service name attached to exported OTLP metrics.")
+	otelExportInterval := flag.Duration("otel-export-interval", env.Duration("OTEL_EXPORT_INTERVAL", defaultOtelExportInterval), "The interval used to export OTLP metrics.")
+	deploymentName := flag.String("deployment-name", env.String("DEPLOYMENT_NAME", ""), "The deployment name for stable resource identification in metrics.")
 
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
@@ -161,6 +168,47 @@ func main() {
 		WithValues("safeReleaseName", *safeReleaseName).
 		Info("Starting composition dynamic controller.")
 
+	log.WithValues("deploymentName", *deploymentName).
+		WithValues("otelEnabled", *otelEnabled).
+		WithValues("otelServiceName", *otelServiceName).
+		WithValues("otelExportInterval", *otelExportInterval).
+		Info("[FLAG PARSE DEBUG] Telemetry configuration loaded from flags/env.")
+
+	telemetryEnabled := *otelEnabled
+	telemetryExportInterval := *otelExportInterval
+
+	telemetryMetrics, telemetryShutdown, err := telemetry.Setup(context.Background(), log, telemetry.Config{
+		Enabled:        telemetryEnabled,
+		ServiceName:    *otelServiceName,
+		ExportInterval: telemetryExportInterval,
+		DeploymentName: *deploymentName,
+	})
+	if err != nil {
+		log.Error(err, "Cannot initialize OpenTelemetry metrics")
+		os.Exit(1)
+	}
+	defer telemetryShutdown(context.Background())
+
+	// Initialize CDC-specific metrics
+	if err := metrics.InitMetrics(context.Background(), log, telemetryEnabled, *otelServiceName, telemetryExportInterval, *deploymentName); err != nil {
+		slog.Warn("Cannot initialize CDC metrics, continuing without metrics", "error", err)
+	}
+	metrics.DebugStatus()
+
+	// Periodic metrics status logging for monitoring during stress tests
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				metrics.DebugStatus()
+			}
+		}
+	}()
+
 	// Create a label requirement for the composition version
 	labelreq, err := labels.NewRequirement(meta.CompositionVersionLabel, selection.Equals, []string{*resourceVersion})
 	if err != nil {
@@ -202,6 +250,7 @@ func main() {
 			LabelSelector: ptr.To(labelselector.String()),
 		}),
 		builder.WithActionEvent(ctrlevent.CRUpdated, ctrlevent.Observe),
+		builder.WithTelemetryMetrics(telemetryMetrics),
 	}
 
 	metricsServerBindAddress := ""
