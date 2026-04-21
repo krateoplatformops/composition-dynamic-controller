@@ -10,6 +10,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
@@ -86,7 +87,7 @@ func TestApplyRole(t *testing.T) {
 	testenv.Test(t, f)
 }
 
-func TestApplyRole_OverwriteExisting(t *testing.T) {
+func TestApplyRole_IncrementalRules(t *testing.T) {
 	f := features.New("Setup").
 		Setup(e2e.Logger("test")).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -98,7 +99,7 @@ func TestApplyRole_OverwriteExisting(t *testing.T) {
 		// Create initial role
 		initialRole := &rbacv1.Role{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-role",
+				Name:      "test-role-incremental",
 				Namespace: "default",
 			},
 			Rules: []rbacv1.PolicyRule{
@@ -118,7 +119,7 @@ func TestApplyRole_OverwriteExisting(t *testing.T) {
 		// Apply new role with the same name but different rules
 		newRole := &rbacv1.Role{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-role",
+				Name:      "test-role-incremental",
 				Namespace: "default",
 			},
 			Rules: []rbacv1.PolicyRule{
@@ -135,20 +136,78 @@ func TestApplyRole_OverwriteExisting(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		// Retrieve the role from the cluster and check if it matches the new role
-		retrievedRole, err := installer.ApplyRole(context.Background(), newRole)
+		// Retrieve the role from the cluster using dynamic client directly
+		res, err := dyn.Resource(schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "roles",
+		}).Namespace("default").Get(ctx, "test-role-incremental", metav1.GetOptions{})
 		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+			t.Fatalf("failed to get role: %v", err)
 		}
 
-		if len(retrievedRole.Rules) != len(newRole.Rules) || retrievedRole.Rules[0].Verbs[0] != newRole.Rules[0].Verbs[0] {
-			t.Errorf("expected role rules %v, got %v", newRole.Rules, retrievedRole.Rules)
+		rules, _, _ := unstructured.NestedSlice(res.Object, "rules")
+		if len(rules) != 2 {
+			t.Errorf("expected 2 role rules, got %v", len(rules))
 		}
 		return ctx
 	}).Feature()
 
 	testenv.Test(t, f)
+}
 
+func TestApplyRole_Idempotency(t *testing.T) {
+	f := features.New("Setup").
+		Setup(e2e.Logger("test")).
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			return ctx
+		}).Assess("Install", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		dyn := dynamic.NewForConfigOrDie(cfg.Client().RESTConfig())
+
+		installer := &RBACInstaller{DynamicClient: dyn}
+		// Create initial role
+		role := &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-role-idempotency",
+				Namespace: "default",
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					Verbs:     []string{"get"},
+					APIGroups: []string{""},
+					Resources: []string{"pods"},
+				},
+			},
+		}
+
+		// Apply twice
+		_, err := installer.ApplyRole(context.Background(), role)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		_, err = installer.ApplyRole(context.Background(), role)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Retrieve and check
+		res, err := dyn.Resource(schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "roles",
+		}).Namespace("default").Get(ctx, "test-role-idempotency", metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("failed to get role: %v", err)
+		}
+
+		rules, _, _ := unstructured.NestedSlice(res.Object, "rules")
+		if len(rules) != 1 {
+			t.Errorf("expected 1 role rule, got %v", len(rules))
+		}
+		return ctx
+	}).Feature()
+
+	testenv.Test(t, f)
 }
 func TestApplyClusterRole(t *testing.T) {
 	f := features.New("Setup").
@@ -280,7 +339,7 @@ func TestApplyRole_NamespaceNotFound(t *testing.T) {
 	testenv.Test(t, f)
 }
 
-func TestApplyClusterRole_OverwriteExisting(t *testing.T) {
+func TestApplyClusterRole_IncrementalRules(t *testing.T) {
 	f := features.New("Setup").
 		Setup(e2e.Logger("test")).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -292,7 +351,7 @@ func TestApplyClusterRole_OverwriteExisting(t *testing.T) {
 		// Create initial cluster role
 		initialClusterRole := &rbacv1.ClusterRole{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-clusterrole",
+				Name: "test-clusterrole-incremental",
 			},
 			Rules: []rbacv1.PolicyRule{
 				{
@@ -311,7 +370,7 @@ func TestApplyClusterRole_OverwriteExisting(t *testing.T) {
 		// Apply new cluster role with the same name but different rules
 		newClusterRole := &rbacv1.ClusterRole{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-clusterrole",
+				Name: "test-clusterrole-incremental",
 			},
 			Rules: []rbacv1.PolicyRule{
 				{
@@ -327,14 +386,19 @@ func TestApplyClusterRole_OverwriteExisting(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		// Retrieve the cluster role from the cluster and check if it matches the new cluster role
-		retrievedClusterRole, err := installer.ApplyClusterRole(context.Background(), newClusterRole)
+		// Retrieve the cluster role from the cluster using dynamic client directly
+		res, err := dyn.Resource(schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "clusterroles",
+		}).Get(ctx, "test-clusterrole-incremental", metav1.GetOptions{})
 		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+			t.Fatalf("failed to get cluster role: %v", err)
 		}
 
-		if len(retrievedClusterRole.Rules) != len(newClusterRole.Rules) || retrievedClusterRole.Rules[0].Verbs[0] != newClusterRole.Rules[0].Verbs[0] {
-			t.Errorf("expected cluster role rules %v, got %v", newClusterRole.Rules, retrievedClusterRole.Rules)
+		rules, _, _ := unstructured.NestedSlice(res.Object, "rules")
+		if len(rules) != 2 {
+			t.Errorf("expected 2 cluster role rules, got %v", len(rules))
 		}
 		return ctx
 	}).Feature()
@@ -459,7 +523,7 @@ func TestApplyRBAC(t *testing.T) {
 	testenv.Test(t, f)
 }
 
-func TestApplyRBAC_OverwriteExisting(t *testing.T) {
+func TestApplyRBAC_IncrementalRules(t *testing.T) {
 	f := features.New("Setup").
 		Setup(e2e.Logger("test")).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -473,7 +537,7 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 		initialRBAC := &RBAC{
 			ClusterRole: &rbacv1.ClusterRole{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-clusterrole",
+					Name: "test-clusterrole-rbac-incremental",
 				},
 				Rules: []rbacv1.PolicyRule{
 					{
@@ -485,12 +549,12 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 			},
 			ClusterRoleBinding: &rbacv1.ClusterRoleBinding{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-clusterrolebinding",
+					Name: "test-clusterrolebinding-rbac-incremental",
 				},
 				RoleRef: rbacv1.RoleRef{
 					APIGroup: "rbac.authorization.k8s.io",
 					Kind:     "ClusterRole",
-					Name:     "test-clusterrole",
+					Name:     "test-clusterrole-rbac-incremental",
 				},
 				Subjects: []rbacv1.Subject{
 					{
@@ -503,7 +567,7 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 				"default": {
 					Role: &rbacv1.Role{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "test-role",
+							Name:      "test-role-rbac-incremental",
 							Namespace: "default",
 						},
 						Rules: []rbacv1.PolicyRule{
@@ -516,13 +580,13 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 					},
 					RoleBinding: &rbacv1.RoleBinding{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "test-rolebinding",
+							Name:      "test-rolebinding-rbac-incremental",
 							Namespace: "default",
 						},
 						RoleRef: rbacv1.RoleRef{
 							APIGroup: "rbac.authorization.k8s.io",
 							Kind:     "Role",
-							Name:     "test-role",
+							Name:     "test-role-rbac-incremental",
 						},
 						Subjects: []rbacv1.Subject{
 							{
@@ -545,7 +609,7 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 		newRBAC := &RBAC{
 			ClusterRole: &rbacv1.ClusterRole{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-clusterrole",
+					Name: "test-clusterrole-rbac-incremental",
 				},
 				Rules: []rbacv1.PolicyRule{
 					{
@@ -557,12 +621,12 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 			},
 			ClusterRoleBinding: &rbacv1.ClusterRoleBinding{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-clusterrolebinding",
+					Name: "test-clusterrolebinding-rbac-incremental",
 				},
 				RoleRef: rbacv1.RoleRef{
 					APIGroup: "rbac.authorization.k8s.io",
 					Kind:     "ClusterRole",
-					Name:     "test-clusterrole",
+					Name:     "test-clusterrole-rbac-incremental",
 				},
 				Subjects: []rbacv1.Subject{
 					{
@@ -575,7 +639,7 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 				"default": {
 					Role: &rbacv1.Role{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "test-role",
+							Name:      "test-role-rbac-incremental",
 							Namespace: "default",
 						},
 						Rules: []rbacv1.PolicyRule{
@@ -588,13 +652,13 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 					},
 					RoleBinding: &rbacv1.RoleBinding{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "test-rolebinding",
+							Name:      "test-rolebinding-rbac-incremental",
 							Namespace: "default",
 						},
 						RoleRef: rbacv1.RoleRef{
 							APIGroup: "rbac.authorization.k8s.io",
 							Kind:     "Role",
-							Name:     "test-role",
+							Name:     "test-role-rbac-incremental",
 						},
 						Subjects: []rbacv1.Subject{
 							{
@@ -613,23 +677,33 @@ func TestApplyRBAC_OverwriteExisting(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		// Retrieve the RBAC from the cluster and check if it matches the new RBAC
-		retrievedClusterRole, err := installer.ApplyClusterRole(context.Background(), newRBAC.ClusterRole)
+		// Retrieve the RBAC from the cluster using dynamic client directly
+		resCR, err := dyn.Resource(schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "clusterroles",
+		}).Get(ctx, "test-clusterrole-rbac-incremental", metav1.GetOptions{})
 		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+			t.Fatalf("failed to get cluster role: %v", err)
 		}
 
-		if len(retrievedClusterRole.Rules) != len(newRBAC.ClusterRole.Rules) || retrievedClusterRole.Rules[0].Verbs[0] != newRBAC.ClusterRole.Rules[0].Verbs[0] {
-			t.Errorf("expected cluster role rules %v, got %v", newRBAC.ClusterRole.Rules, retrievedClusterRole.Rules)
+		crRules, _, _ := unstructured.NestedSlice(resCR.Object, "rules")
+		if len(crRules) != 2 {
+			t.Errorf("expected 2 cluster role rules, got %v", len(crRules))
 		}
 
-		retrievedRole, err := installer.ApplyRole(context.Background(), newRBAC.Namespaced["default"].Role)
+		resR, err := dyn.Resource(schema.GroupVersionResource{
+			Group:    "rbac.authorization.k8s.io",
+			Version:  "v1",
+			Resource: "roles",
+		}).Namespace("default").Get(ctx, "test-role-rbac-incremental", metav1.GetOptions{})
 		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+			t.Fatalf("failed to get role: %v", err)
 		}
 
-		if len(retrievedRole.Rules) != len(newRBAC.Namespaced["default"].Role.Rules) || retrievedRole.Rules[0].Verbs[0] != newRBAC.Namespaced["default"].Role.Rules[0].Verbs[0] {
-			t.Errorf("expected role rules %v, got %v", newRBAC.Namespaced["default"].Role.Rules, retrievedRole.Rules)
+		rRules, _, _ := unstructured.NestedSlice(resR.Object, "rules")
+		if len(rRules) != 2 {
+			t.Errorf("expected 2 role rules, got %v", len(rRules))
 		}
 
 		return ctx
