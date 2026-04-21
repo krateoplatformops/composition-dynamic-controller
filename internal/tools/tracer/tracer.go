@@ -63,7 +63,7 @@ func (t *Tracer) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	if err != nil {
 		return resp, err
 	}
-	if req.Method != http.MethodGet && req.URL.Query().Get("fieldManager") != "" {
+	if req.Method != http.MethodGet && (req.Method == http.MethodDelete || req.URL.Query().Get("fieldManager") != "") {
 		split := strings.Split(req.URL.Path, "/")
 
 		if len(split) > 2 {

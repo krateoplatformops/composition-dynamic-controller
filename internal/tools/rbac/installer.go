@@ -6,6 +6,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 
+	"reflect"
+
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -94,6 +96,8 @@ func (r *RBACInstaller) ApplyNamespace(ctx context.Context, namespace *corev1.Na
 			return nil, fmt.Errorf("failed to convert unstructured to Namespace: %w", err)
 		}
 		return namespace, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to Get Namespace: %w", err)
 	}
 
 	res, err := cli.Update(ctx, u, metav1.UpdateOptions{})
@@ -123,7 +127,8 @@ func (i *RBACInstaller) ApplyRole(ctx context.Context, role *rbacv1.Role) (*rbac
 		},
 	).Namespace(role.Namespace)
 
-	if _, err = cli.Get(ctx, role.Name, metav1.GetOptions{}); errors.IsNotFound(err) {
+	existingU, err := cli.Get(ctx, role.Name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
 		res, err := cli.Create(ctx, u, metav1.CreateOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to Create Role: %w", err)
@@ -136,7 +141,33 @@ func (i *RBACInstaller) ApplyRole(ctx context.Context, role *rbacv1.Role) (*rbac
 		}
 
 		return role, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to Get Role: %w", err)
 	}
+
+	existingRole := &rbacv1.Role{}
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(existingU.Object, existingRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert unstructured to Role: %w", err)
+	}
+
+	modified := false
+	for _, rule := range role.Rules {
+		if !ruleExists(existingRole.Rules, rule) {
+			existingRole.Rules = append(existingRole.Rules, rule)
+			modified = true
+		}
+	}
+
+	if !modified {
+		return existingRole, nil
+	}
+
+	m, err = runtime.DefaultUnstructuredConverter.ToUnstructured(existingRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert Role to unstructured: %w", err)
+	}
+	u.Object = m
 
 	res, err := cli.Update(ctx, u, metav1.UpdateOptions{})
 	if err != nil {
@@ -180,6 +211,8 @@ func (i *RBACInstaller) ApplyRoleBinding(ctx context.Context, roleBinding *rbacv
 		}
 
 		return roleBinding, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to Get RoleBinding: %w", err)
 	}
 
 	res, err := cli.Update(ctx, u, metav1.UpdateOptions{})
@@ -211,7 +244,8 @@ func (i *RBACInstaller) ApplyClusterRole(ctx context.Context, clusterRole *rbacv
 		},
 	)
 
-	if _, err := cli.Get(ctx, clusterRole.Name, metav1.GetOptions{}); errors.IsNotFound(err) {
+	existingU, err := cli.Get(ctx, clusterRole.Name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
 		res, err := cli.Create(ctx, u, metav1.CreateOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to Create ClusterRole: %w", err)
@@ -224,7 +258,33 @@ func (i *RBACInstaller) ApplyClusterRole(ctx context.Context, clusterRole *rbacv
 		}
 
 		return clusterRole, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to Get ClusterRole: %w", err)
 	}
+
+	existingClusterRole := &rbacv1.ClusterRole{}
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(existingU.Object, existingClusterRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert unstructured to ClusterRole: %w", err)
+	}
+
+	modified := false
+	for _, rule := range clusterRole.Rules {
+		if !ruleExists(existingClusterRole.Rules, rule) {
+			existingClusterRole.Rules = append(existingClusterRole.Rules, rule)
+			modified = true
+		}
+	}
+
+	if !modified {
+		return existingClusterRole, nil
+	}
+
+	m, err = runtime.DefaultUnstructuredConverter.ToUnstructured(existingClusterRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert ClusterRole to unstructured: %w", err)
+	}
+	u.Object = m
 
 	res, err := cli.Update(ctx, u, metav1.UpdateOptions{})
 	if err != nil {
@@ -267,6 +327,8 @@ func (i *RBACInstaller) ApplyClusterRoleBinding(ctx context.Context, clusterRole
 		}
 
 		return clusterRoleBinding, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to Get ClusterRoleBinding: %w", err)
 	}
 
 	res, err := cli.Update(ctx, u, metav1.UpdateOptions{})
@@ -380,4 +442,13 @@ func (i *RBACInstaller) DeleteClusterRoleBinding(ctx context.Context, name strin
 		return fmt.Errorf("failed to Delete ClusterRoleBinding: %w", err)
 	}
 	return nil
+}
+
+func ruleExists(rules []rbacv1.PolicyRule, target rbacv1.PolicyRule) bool {
+	for _, rule := range rules {
+		if reflect.DeepEqual(rule, target) {
+			return true
+		}
+	}
+	return false
 }
