@@ -11,29 +11,6 @@ config:
           endpoint: 0.0.0.0:4318
   processors:
     batch: {}
-    resourcedetection:
-      detectors: [k8s, env]
-      timeout: 2s
-      override: true
-    attributes:
-      actions:
-        - key: k8s_pod_name
-          from_attribute: k8s.pod.name
-          action: upsert
-        - key: k8s_namespace_name
-          from_attribute: k8s.namespace.name
-          action: upsert
-        - key: k8s_deployment_name
-          from_attribute: k8s.deployment.name
-          action: upsert
-        - key: k8s_statefulset_name
-          from_attribute: k8s.statefulset.name
-          action: upsert
-    resource:
-      attributes:
-        - key: deployment.environment
-          value: production
-          action: insert
   exporters:
     prometheus:
       endpoint: 0.0.0.0:9464
@@ -41,7 +18,7 @@ config:
     pipelines:
       metrics:
         receivers: [otlp]
-        processors: [resourcedetection, attributes, batch, resource]
+        processors: [batch]
         exporters: [prometheus]
 
 ports:
@@ -55,12 +32,3 @@ ports:
     containerPort: 9464
     servicePort: 9464
     protocol: TCP
-
-serviceMonitor:
-  enabled: true
-  metricsEndpoints:
-    - port: prom-metrics
-      interval: 30s
-      scrapeTimeout: 10s
-  extraLabels:
-    release: monitoring-stack
