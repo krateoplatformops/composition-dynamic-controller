@@ -34,6 +34,31 @@ All Helm operations (get, install, upgrade, uninstall, rollback) go through the 
 
 Drift is detected by hashing the **rendered** manifest and comparing it to the recorded digest. This is rendered-vs-rendered, not rendered-vs-live: it does not directly notice edits to live objects — only the side-effecting upgrade (see the box) corrects those.
 
+## Creating a composition for resources that already exist (adoption)
+
+Two distinct "already exists" questions come up, and they have different answers.
+
+**The Helm release already exists.** `Observe` (and `Create`) look up the release by its computed name first. If a release is already there — typically because a previous `Create` failed *after* installing, or the controller restarted — the CDC **upgrades the existing release instead of installing a new one**, so a re-triggered create is safe and idempotent rather than a "release already exists" failure.
+
+**A Kubernetes object the chart renders already exists in the cluster.** Here the CDC relies on Helm's default ownership rules. The post-renderer stamps every rendered object with the composition-ownership labels, but the CDC does **not** enable Helm's take-ownership / force / replace behavior. So if the chart would create an object that already exists and is *not* part of this release, Helm refuses to adopt it and the install/upgrade fails with the usual *"exists and cannot be imported into the current release"* / invalid-ownership error. Adopting pre-existing objects would require Helm's take-ownership option — it exists in the shared Helm library but is not wired into the CDC today, so importing arbitrary live objects into a composition is **not** supported out of the box.
+
+## Disabling specific operations (management & deletion policies)
+
+The CDC runs on unstructured-runtime, which honors two annotations on the **`Composition` instance** to switch off individual operations — the same annotations core-provider honors on the `CompositionDefinition`:
+
+| Annotation | Value | What the CDC may do to the release |
+| --- | --- | --- |
+| `krateo.io/management-policy` | `default` (when unset) | Full management: create, update, and delete the release. |
+| | `observe-create-update` | Create and update, but **never uninstall** on delete. |
+| | `observe-delete` | **No create/update**; only delete (uninstall). |
+| | `observe` | **Observe only** — never create, update, or delete. |
+| `krateo.io/deletion-policy` | `delete` (when unset) / `orphan` | With `orphan`, deleting the `Composition` removes the finalizer **without** uninstalling the release. |
+
+Mechanically these gate the create/update/delete events the reconcile loop would otherwise enqueue (`meta.ShouldCreate` / `ShouldUpdate` / `ShouldDelete` in unstructured-runtime). User-facing usage and YAML examples are not duplicated here — see the **Lifecycle Policies** how-to on [docs.krateo.io](https://docs.krateo.io).
+
+> ### ⚠️ `observe` / `observe-create-update` do not fully freeze an existing release
+> These policies suppress the **enqueued** create/update actions — but remember that **`Observe` itself runs a Helm upgrade** on every reconcile when a release already exists (see the box near the top of this page). The management policy does *not* gate that side-effecting upgrade, so a composition whose release already exists is **not** frozen by `observe`; the upgrade inside `Observe` still runs. (Create is genuinely prevented, because `Observe` reports "doesn't exist" and returns before upgrading when there is no release.) **To truly freeze a composition, use graceful pause**, which returns early from all four operations.
+
 ## Graceful pause
 
 Graceful pause is a CDC-specific signal, distinct from the runtime's standard pause. When set, all four operations return early without touching the release, and the paused duration is tracked. It's how a composition can be frozen without being deleted.

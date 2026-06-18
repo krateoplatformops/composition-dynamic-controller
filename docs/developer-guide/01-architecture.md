@@ -26,7 +26,7 @@ flowchart TB
     HELM --> K8s
 ```
 
-The authoritative reconcile flowchart is `_diagrams/cdc-flow.puml`.
+The authoritative reconcile flowchart is [`../../_diagrams/cdc-flow.puml`](../../_diagrams/cdc-flow.puml) (at the repository root).
 
 ## How it boots
 

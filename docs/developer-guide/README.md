@@ -33,4 +33,4 @@ The CDC is **not composition-specific at compile time** — a single binary watc
 - **The framework** — the CDC is built on **unstructured-runtime**; its developer guide documents the reconcile loop and the contract the CDC plugs into.
 - **Logging** — `docs/logs-ingester-compatibility.md`. **Telemetry / metrics** — `telemetry/`.
 - **Design note** — `docs/observe-reconciliation-loop-184.md` analyses the Observe-mutation behavior discussed in [`02`](./02-reconcile-lifecycle.md).
-- **Reconcile flow diagram (source)** — `_diagrams/cdc-flow.puml`.
+- **Reconcile flow diagram (source)** — [`../../_diagrams/cdc-flow.puml`](../../_diagrams/cdc-flow.puml) (at the repository root).
