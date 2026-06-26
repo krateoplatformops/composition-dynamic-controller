@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/gobuffalo/flect v1.0.3
 	github.com/krateoplatformops/plumbing v1.7.3
-	github.com/krateoplatformops/unstructured-runtime v1.1.0
+	github.com/krateoplatformops/unstructured-runtime v1.1.1
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0
