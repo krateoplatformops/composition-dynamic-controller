@@ -82,7 +82,7 @@ func (h *handler) setStatus(mg *unstructured.Unstructured, opts *statusManagerOp
 	}
 
 	if len(opts.resources) > 0 {
-		managed, err := h.populateManagedResources(opts.resources)
+		managed, err := h.populateManagedResources(opts.resources, mg.GetNamespace())
 		if err != nil {
 			return fmt.Errorf("populating managed resources: %w", err)
 		}
@@ -130,7 +130,10 @@ func setManagedResources(mg *unstructured.Unstructured, managed []any) {
 	mg.Object["status"] = mapstatus
 }
 
-func (h *handler) populateManagedResources(resources []processor.MinimalMetadata) ([]any, error) {
+// populateManagedResources builds status.managed from the release manifest.
+// releaseNamespace is used for namespaced objects whose manifest has no namespace,
+// as Helm creates them in the release namespace.
+func (h *handler) populateManagedResources(resources []processor.MinimalMetadata, releaseNamespace string) ([]any, error) {
 	var managed []interface{}
 	for _, ref := range resources {
 		gvr, err := h.pluralizer.GVKtoGVR(schema.FromAPIVersionAndKind(ref.GetAPIVersion(), ref.GetKind()))
@@ -145,6 +148,8 @@ func (h *handler) populateManagedResources(resources []processor.MinimalMetadata
 		}
 		if !isNamespaced {
 			ref.SetNamespace("")
+		} else if len(ref.GetNamespace()) == 0 {
+			ref.SetNamespace(releaseNamespace)
 		}
 
 		buildpath := func() string {
