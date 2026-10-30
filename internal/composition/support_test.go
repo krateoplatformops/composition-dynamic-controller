@@ -47,6 +47,8 @@ func newTestMapper() *meta.DefaultRESTMapper {
 }
 
 func TestPopulateManagedResources(t *testing.T) {
+	const releaseNamespace = "krateo-system"
+
 	tests := []struct {
 		name        string
 		pluralizer  pluralizer.PluralizerInterface
@@ -155,6 +157,48 @@ func TestPopulateManagedResources(t *testing.T) {
 			},
 		},
 		{
+			name: "namespaced resource with group without namespace",
+			pluralizer: &mockPluralizer{
+				gvrMap: map[schema.GroupVersionKind]schema.GroupVersionResource{
+					{Group: "apps", Version: "v1", Kind: "Deployment"}: {Group: "apps", Version: "v1", Resource: "deployments"},
+				},
+				errMap: make(map[schema.GroupVersionKind]error),
+			},
+			resources: []processor.MinimalMetadata{
+				{APIVersion: "apps/v1", Kind: "Deployment", Metadata: processor.Metadata{Name: "test-deployment", Namespace: ""}},
+			},
+			expected: []interface{}{
+				ManagedResource{
+					APIVersion: "apps/v1",
+					Resource:   "deployments",
+					Name:       "test-deployment",
+					Namespace:  releaseNamespace,
+					Path:       "/apis/apps/v1/namespaces/krateo-system/deployments/test-deployment",
+				},
+			},
+		},
+		{
+			name: "core group namespaced resource without namespace",
+			pluralizer: &mockPluralizer{
+				gvrMap: map[schema.GroupVersionKind]schema.GroupVersionResource{
+					{Group: "", Version: "v1", Kind: "Service"}: {Group: "", Version: "v1", Resource: "services"},
+				},
+				errMap: make(map[schema.GroupVersionKind]error),
+			},
+			resources: []processor.MinimalMetadata{
+				{APIVersion: "v1", Kind: "Service", Metadata: processor.Metadata{Name: "test-service", Namespace: ""}},
+			},
+			expected: []interface{}{
+				ManagedResource{
+					APIVersion: "v1",
+					Resource:   "services",
+					Name:       "test-service",
+					Namespace:  releaseNamespace,
+					Path:       "/api/v1/namespaces/krateo-system/services/test-service",
+				},
+			},
+		},
+		{
 			name: "multiple resources",
 			pluralizer: &mockPluralizer{
 				gvrMap: map[schema.GroupVersionKind]schema.GroupVersionResource{
@@ -192,7 +236,7 @@ func TestPopulateManagedResources(t *testing.T) {
 				pluralizer: tt.pluralizer,
 				mapper:     newTestMapper(),
 			}
-			result, err := h.populateManagedResources(tt.resources)
+			result, err := h.populateManagedResources(tt.resources, releaseNamespace)
 
 			if tt.expectError && err == nil {
 				t.Fatal("expected error but got none")
